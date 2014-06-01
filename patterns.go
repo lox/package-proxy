@@ -28,12 +28,12 @@ var refreshPatterns = []RefreshPattern{
 }
 
 type ParsedRefreshPattern struct {
-	Pattern  regexp.Regexp
+	Pattern  *regexp.Regexp
 	Duration time.Duration
 }
 
 func ParseRefreshPatterns() ([]ParsedRefreshPattern, error) {
-	patterns := [len(refreshPatterns)]ParsedRefreshPattern{}
+	patterns := make([]ParsedRefreshPattern, len(refreshPatterns))
 
 	for idx, p := range refreshPatterns {
 		r, err := regexp.Compile(p.Pattern)
@@ -47,5 +47,5 @@ func ParseRefreshPatterns() ([]ParsedRefreshPattern, error) {
 		patterns[idx] = ParsedRefreshPattern{r, d}
 	}
 
-	return patterns
+	return patterns, nil
 }
