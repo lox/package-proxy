@@ -9,8 +9,8 @@ Running
 ========
 
 ```bash
-go build pmc.go
-./pmc
+go get github.com/99designs/pmc
+pmc
 ```
 
 Todo
