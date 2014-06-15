@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"testing"
 
-	pmcproxy "github.com/99designs/pmc/proxy"
+	pmcproxy "github.com/lox/pmc"
 )
 
 type testFixture struct {

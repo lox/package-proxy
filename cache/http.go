@@ -11,14 +11,18 @@ const (
 	CachedHeader  = "X-Pmc-Cached"
 )
 
-// RoundTripper
-type RoundTripper struct {
-	http.RoundTripper
-	Cache Cache
+func CachedRoundTripper(c Cache, rt http.RoundTripper) *cachedRoundTripper {
+	return &cachedRoundTripper{RoundTripper: rt, cache: c}
 }
 
-func (r *RoundTripper) RoundTrip(req *http.Request) (resp *http.Response, err error) {
-	cachedResp, err := CachedResponse(r.Cache, req)
+// cachedRoundTripper is a http.RoundTripper that caches responses
+type cachedRoundTripper struct {
+	http.RoundTripper
+	cache Cache
+}
+
+func (r *cachedRoundTripper) RoundTrip(req *http.Request) (resp *http.Response, err error) {
+	cachedResp, err := CachedResponse(r.cache, req)
 	if err != nil {
 		panic(err)
 	}
@@ -28,9 +32,9 @@ func (r *RoundTripper) RoundTrip(req *http.Request) (resp *http.Response, err er
 		resp = cachedResp
 	} else {
 		resp, err = r.RoundTripper.RoundTrip(req)
-		if err == nil {
+		if err == nil && resp.StatusCode == 200 {
 			if b, derr := httputil.DumpResponse(resp, true); derr == nil {
-				go r.cacheResponse(req, b)
+				go r.cache.Set(RequestCacheKey(req), b)
 			}
 		}
 	}
@@ -41,11 +45,7 @@ func (r *RoundTripper) RoundTrip(req *http.Request) (resp *http.Response, err er
 	return
 }
 
-func (r *RoundTripper) cacheResponse(req *http.Request, bytes []byte) {
-	r.Cache.Set(RequestCacheKey(req), bytes)
-}
-
-func (r *RoundTripper) log(req *http.Request, resp *http.Response) {
+func (r *cachedRoundTripper) log(req *http.Request, resp *http.Response) {
 	var status string
 	switch resp.Header.Get(CachedHeader) {
 	case "1":

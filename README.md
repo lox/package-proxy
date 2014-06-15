@@ -9,7 +9,7 @@ Running
 ========
 
 ```bash
-go get github.com/99designs/pmc
+go get github.com/lox/pmc
 pmc
 ```
 
