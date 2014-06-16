@@ -1,57 +1,87 @@
 package cache
 
 import (
+	"bytes"
+	"io/ioutil"
 	"log"
 	"net/http"
-	"net/http/httputil"
 )
 
 const (
-	ProxiedHeader = "X-Pmc-Proxy"
-	CachedHeader  = "X-Pmc-Cached"
+	ProxiedHeader  = "X-PackageProxy-Proxied"
+	CachedHeader   = "X-PackageProxy-Cached"
+	MaxAgeHeader   = "X-PackageProxy-MaxAge"
+	CacheKeyHeader = "X-PackageProxy-Key"
 )
 
-func CachedRoundTripper(c Cache, rt http.RoundTripper) *cachedRoundTripper {
-	return &cachedRoundTripper{RoundTripper: rt, cache: c}
+func CachedRoundTripper(c Cache, upstream http.RoundTripper) *roundTripper {
+	return &roundTripper{upstream: upstream, cache: c}
 }
 
-// cachedRoundTripper is a http.RoundTripper that caches responses
-type cachedRoundTripper struct {
-	http.RoundTripper
-	cache Cache
+// roundTripper is a http.RoundTripper that caches responses
+type roundTripper struct {
+	upstream http.RoundTripper
+	cache    Cache
 }
 
-func (r *cachedRoundTripper) RoundTrip(req *http.Request) (resp *http.Response, err error) {
-	cachedResp, err := CachedResponse(r.cache, req)
-	if err != nil {
-		panic(err)
+func (r *roundTripper) RoundTrip(req *http.Request) (resp *http.Response, err error) {
+	key := req.Header.Get(CacheKeyHeader)
+
+	// return immediately if we can't cache
+	if key == "" {
+		resp, err = r.upstream.RoundTrip(req)
+		r.log(req, resp, "SKIP")
+		return
 	}
 
-	if cachedResp != nil {
-		cachedResp.Header.Set(CachedHeader, "1")
-		resp = cachedResp
-	} else {
-		resp, err = r.RoundTripper.RoundTrip(req)
-		if err == nil && resp.StatusCode == 200 {
-			if b, derr := httputil.DumpResponse(resp, true); derr == nil {
-				go r.cache.Set(RequestCacheKey(req), b)
-			}
+	cacheStatus := "HIT"
+
+	// populate the cache if needed
+	if !r.cache.Has(key) {
+		cacheStatus = "MISS"
+		upstreamResp, err := r.upstream.RoundTrip(req)
+		if err != nil {
+			return upstreamResp, err
+		}
+
+		if err := r.cache.WriteStream(key, upstreamResp.Body, false); err != nil {
+			panic(err)
 		}
 	}
 
-	resp.Header.Set(ProxiedHeader, "1")
-	r.log(req, resp)
+	stream, err := r.cache.ReadStream(key)
+	if err != nil {
+		return nil, err
+	}
+
+	// buffer into memory for Content-Length :(
+	buffer := new(bytes.Buffer)
+	buffer.ReadFrom(stream)
+	stream.Close()
+
+	resp = new(http.Response)
+	resp.Status = "200 OK"
+	resp.StatusCode = 200
+	resp.Proto = "HTTP/1.0"
+	resp.ProtoMajor = 1
+	resp.ProtoMinor = 0
+	resp.Body = ioutil.NopCloser(buffer)
+	resp.Request = req
+	resp.ContentLength = int64(buffer.Len())
+	resp.Header = http.Header{}
+	resp.Header.Set(CachedHeader, "1")
+	resp.Header.Set(CacheKeyHeader, key)
+
+	r.log(req, resp, cacheStatus)
 
 	return
 }
 
-func (r *cachedRoundTripper) log(req *http.Request, resp *http.Response) {
-	var status string
-	switch resp.Header.Get(CachedHeader) {
-	case "1":
-		status = "HIT"
-	default:
-		status = "MISS"
+func (r *roundTripper) log(req *http.Request, resp *http.Response, status string) {
+	if status == "HIT" {
+		status = "\x1b[32;1m" + status + "\x1b[0m"
+	} else if status == "MISS" {
+		status = "\x1b[31;1m" + status + "\x1b[0m"
 	}
 	log.Printf(
 		"%s \"%s %s %s\" (%s) %d %s",

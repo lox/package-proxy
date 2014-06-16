@@ -4,56 +4,54 @@ import (
 	"log"
 	"net/http"
 	"net/http/httputil"
+	"os"
+	"path/filepath"
 
 	"github.com/lox/packageproxy/cache"
 	"github.com/lox/packageproxy/crypto"
+	"github.com/lox/packageproxy/providers"
+	"github.com/peterbourgon/diskv"
 )
 
-type PackageCache struct {
-	Handler http.Handler
-	Config  Config
+type PackageProxy struct {
+	http.Handler
+	Config Config
 }
 
 type RequestRewriter interface {
 	Rewrite(req *http.Request)
 }
 
-func NewPackageCache(config Config) (*PackageCache, error) {
+func NewPackageProxy(config Config) (*PackageProxy, error) {
+
+	// basic disk-backed cache, keys are filenames
+	diskCache := diskv.New(diskv.Options{
+		BasePath: config.CacheDir,
+		Transform: func(key string) []string {
+			path := filepath.Join(config.CacheDir, key)
+			os.MkdirAll(filepath.Dir(path), 0700)
+			return []string{}
+		},
+		CacheSizeMax: config.CacheSizeMax,
+	})
+
 	proxy := &httputil.ReverseProxy{
-		Transport: cache.CachedRoundTripper(cache.NewMemoryCache(), &http.Transport{}),
+		Director: func(r *http.Request) {},
+		Transport: providers.ProviderRoundTripper(config.Providers,
+			cache.CachedRoundTripper(diskCache, &http.Transport{}),
+		),
 	}
 
+	// unwraps TLS with generated certificates
 	handler, err := crypto.UnwrapTlsHandler(proxy, "certs/private.key", "certs/public.pem")
 	if err != nil {
 		return nil, err
 	}
 
-	pm := &PackageCache{Handler: handler, Config: config}
-	proxy.Director = pm.director
-
-	return pm, nil
+	return &PackageProxy{Handler: handler, Config: config}, nil
 }
 
-func (p *PackageCache) director(req *http.Request) {
-	for _, provider := range p.Config.Providers {
-		provider.Rewrite(req)
-	}
-}
-
-func (p *PackageCache) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
-	var matched bool
-
-	for _, provider := range p.Config.Providers {
-		if provider.Match(req) {
-			log.Printf("request matched provider %#v", provider)
-			matched = true
-			break
-		}
-	}
-
-	if !matched {
-		//TODO: error
-	}
-
+func (p *PackageProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+	log.Printf("Proxying %s %s", req.Method, req.URL.String())
 	p.Handler.ServeHTTP(rw, req)
 }

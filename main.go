@@ -1,6 +1,8 @@
 package main
 
 import (
+	"flag"
+	"fmt"
 	"log"
 	"net/http"
 
@@ -10,18 +12,30 @@ import (
 )
 
 const (
-	PROXY_ADDR = "0.0.0.0:8080"
+	PROXY_ADDR = "0.0.0.0:3142"
 )
 
 func main() {
+	flag.Usage = func() {
+		fmt.Println("Usage: packageproxy [options]")
+		fmt.Println("\nOptions:")
+		fmt.Printf("  -dir=.cache    The dir to store cache data in\n")
+	}
+
+	cacheDir := flag.String("dir", ".cache", "The dir to store cache data in")
+	flag.Parse()
+
+	log.Printf("storing cache in %s", *cacheDir)
+
 	config := server.Config{
+		CacheDir:     *cacheDir,
+		CacheSizeMax: 1024 << 20, // 1GB
 		Providers: []providers.Provider{
 			ubuntu.NewProvider(),
-			providers.DefaultProvider,
 		},
 	}
 
-	pc, err := server.NewPackageCache(config)
+	pc, err := server.NewPackageProxy(config)
 	if err != nil {
 		log.Fatal(err)
 	}

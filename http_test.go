@@ -1,21 +1,39 @@
 package main
 
 import (
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
 
-	pmcproxy "github.com/lox/pmc"
+	"github.com/lox/packageproxy/cache"
+	"github.com/lox/packageproxy/providers"
+	"github.com/lox/packageproxy/server"
 )
 
 type testFixture struct {
 	proxy, backend *httptest.Server
+	provider       *testProvider
+}
+
+type testProvider struct {
+	matcherFunc func(r *http.Request) bool
+	rewriteFunc func(r *http.Request)
+}
+
+func (p *testProvider) Match(r *http.Request) bool {
+	return p.matcherFunc(r)
+}
+
+func (p *testProvider) Rewrite(r *http.Request) {
+	p.rewriteFunc(r)
 }
 
 func newTestFixture(handler http.HandlerFunc) *testFixture {
-	pmc, err := NewPmc()
+	provider := &testProvider{}
+	pp, err := server.NewPackageProxy(server.Config{Providers: []providers.Provider{
+		provider,
+	}})
 	if err != nil {
 		panic(err)
 	}
@@ -26,14 +44,14 @@ func newTestFixture(handler http.HandlerFunc) *testFixture {
 		panic(err)
 	}
 
-	// force rewriting to the testing backend
-	pmc.Proxy.Director = func(req *http.Request) {
-		req.URL.Scheme = backendUrl.Scheme
-		req.URL.Host = backendUrl.Host
-		log.Printf("%#v", req)
+	provider.matcherFunc = func(r *http.Request) bool {
+		return true
+	}
+	provider.rewriteFunc = func(r *http.Request) {
+		r.URL.Host = backendUrl.Host
 	}
 
-	return &testFixture{httptest.NewServer(pmc), backend}
+	return &testFixture{httptest.NewServer(pp), backend, provider}
 }
 
 // client returns an http client configured to use the provided proxy
@@ -69,8 +87,8 @@ func TestProxyCachesRequests(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assertHeader(t, resp1, pmcproxy.ProxiedHeader, "1")
-	assertHeader(t, resp1, pmcproxy.CachedHeader, "")
+	assertHeader(t, resp1, cache.ProxiedHeader, "1")
+	assertHeader(t, resp1, cache.CachedHeader, "")
 
 	// second request should be cached
 	resp2, err := fixture.client().Get(fixture.backend.URL)
@@ -78,8 +96,8 @@ func TestProxyCachesRequests(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assertHeader(t, resp2, pmcproxy.ProxiedHeader, "1")
-	assertHeader(t, resp2, pmcproxy.CachedHeader, "1")
+	assertHeader(t, resp2, cache.ProxiedHeader, "1")
+	assertHeader(t, resp2, cache.CachedHeader, "1")
 }
 
 func TestUbuntuRewrites(t *testing.T) {
@@ -93,6 +111,6 @@ func TestUbuntuRewrites(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assertHeader(t, resp1, pmcproxy.ProxiedHeader, "1")
-	assertHeader(t, resp1, pmcproxy.CachedHeader, "")
+	assertHeader(t, resp1, cache.ProxiedHeader, "1")
+	assertHeader(t, resp1, cache.CachedHeader, "")
 }
