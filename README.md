@@ -16,8 +16,8 @@ Planned
 Via Docker:
 
 ```bash
-docker build --rm=true --tag="package-proxy" .
-docker run --tty --interactive --rm --publish 3142:3142 package-proxy      
+docker build --rm=true --tag="packageproxy" .
+docker run --tty --interactive --rm --publish 3142:3142 packageproxy      
 ```
 
 As a binary:
@@ -50,8 +50,9 @@ sudo dpkg-reconfigure ca-certificates
 
 Apt will respect `HTTPS_PROXY`, but if you'd rather configure it manually
 
+```bash
 echo 'Acquire::http::proxy "https://x.x.x.x:3142/";' >> /etc/apt/apt.conf
 echo 'Acquire::https::proxy "https://x.x.x.x:3142/";' >> /etc/apt/apt.conf
-
+```
 
 
