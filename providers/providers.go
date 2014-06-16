@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/lox/packageproxy/cache"
+	"github.com/lox/package-proxy/cache"
 )
 
 type Provider interface {

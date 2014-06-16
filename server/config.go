@@ -1,6 +1,6 @@
 package server
 
-import "github.com/lox/packageproxy/providers"
+import "github.com/lox/package-proxy/providers"
 
 type Config struct {
 	Providers    []providers.Provider

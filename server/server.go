@@ -7,9 +7,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/lox/packageproxy/cache"
-	"github.com/lox/packageproxy/crypto"
-	"github.com/lox/packageproxy/providers"
+	"github.com/lox/package-proxy/cache"
+	"github.com/lox/package-proxy/crypto"
+	"github.com/lox/package-proxy/providers"
 	"github.com/peterbourgon/diskv"
 )
 

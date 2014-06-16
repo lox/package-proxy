@@ -6,9 +6,9 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/lox/packageproxy/cache"
-	"github.com/lox/packageproxy/providers"
-	"github.com/lox/packageproxy/server"
+	"github.com/lox/package-proxy/cache"
+	"github.com/lox/package-proxy/providers"
+	"github.com/lox/package-proxy/server"
 )
 
 type testFixture struct {

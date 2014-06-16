@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lox/packageproxy/cache"
+	"github.com/lox/package-proxy/cache"
 )
 
 type ubuntuProvider struct {

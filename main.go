@@ -6,9 +6,9 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/lox/packageproxy/providers"
-	"github.com/lox/packageproxy/providers/ubuntu"
-	"github.com/lox/packageproxy/server"
+	"github.com/lox/package-proxy/providers"
+	"github.com/lox/package-proxy/providers/ubuntu"
+	"github.com/lox/package-proxy/server"
 )
 
 const (
@@ -17,7 +17,7 @@ const (
 
 func main() {
 	flag.Usage = func() {
-		fmt.Println("Usage: packageproxy [options]")
+		fmt.Println("Usage: package-proxy [options]")
 		fmt.Println("\nOptions:")
 		fmt.Printf("  -dir=.cache    The dir to store cache data in\n")
 	}

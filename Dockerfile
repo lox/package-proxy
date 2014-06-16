@@ -1,9 +1,8 @@
-FROM google/golang
+FROM busybox
+MAINTAINER Lachlan Donald <lachlan@ljd.cc>
 
-ADD . /gopath/src/github.com/lox/packageproxy
-RUN cd /gopath/src/github.com/lox/packageproxy && go get
-RUN cd /gopath/src/github.com/lox/packageproxy && go build .
+ADD package-proxy-linux-amd64 /package-proxy
+VOLUME ["/tmp/cache"]
 
-WORKDIR /gopath/src/github.com/lox/packageproxy
+CMD ["/package-proxy","-dir","/tmp/cache"]
 EXPOSE 3142
-CMD ["./packageproxy","-dir","/tmp/cache"]
