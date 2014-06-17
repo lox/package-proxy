@@ -24,7 +24,7 @@ docker: clean
 	docker build --tag="package-proxy" .
 	-rm package-proxy-linux-amd64
 
-docker-run:
+docker-run: docker
 	docker run \
 		--tty --interactive --rm --publish 3142:3142 \
 		--volume /tmp/cache:/tmp/cache \
