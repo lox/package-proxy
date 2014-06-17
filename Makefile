@@ -2,6 +2,7 @@
 
 NAME := package-proxy
 VERSION := $(shell git describe --tags --abbrev=4 --always)
+DOCKER_VERSION := $(subst v,,$(VERSION))
 BUILD_ARCHS := amd64
 BUILD_OOS := linux darwin
 BUILDS = $(foreach oos, $(BUILD_OOS), \
@@ -33,16 +34,16 @@ deps:
 	go get
 
 docker: clean build
-	docker build --tag="package-proxy" .
+	docker build --tag="lox24/package-proxy" .
 
 docker-run: docker
 	docker run \
-		--tty --interactive --rm --publish 3142:3142 \
+		--name package-proxy \
+		--detach \
+		--publish 3142:3142 \
 		--volume /tmp/vagrant-cache/generic:/tmp/cache \
 		package-proxy
 
 docker-release: docker
-	docker tag package-proxy lox24/package-proxy:$(subst v,,$(VERSION))
-	docker push lox24/package-proxy:$(subst v,,$(VERSION))
-	docker tag package-proxy lox24/package-proxy:latest
-	docker push lox24/package-proxy:latest
+	docker tag lox24/package-proxy:latest lox24/package-proxy:$(DOCKER_VERSION)
+	docker push lox24/package-proxy:$(DOCKER_VERSION)
