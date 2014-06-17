@@ -42,8 +42,8 @@ func (r *roundTripper) RoundTrip(req *http.Request) (resp *http.Response, err er
 		req.Header.Set(cache.MaxAgeHeader, provider.CacheMaxAge(req).String())
 		provider.RewriteUrl(req.URL)
 
-                // Host header needs to be updated to match URL
-                req.Host = req.URL.Host
+		// Host header needs to be updated to match URL
+		req.Host = req.URL.Host
 	}
 
 	return r.RoundTripper.RoundTrip(req)

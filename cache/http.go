@@ -28,7 +28,7 @@ func (r *roundTripper) RoundTrip(req *http.Request) (resp *http.Response, err er
 	key := req.Header.Get(CacheKeyHeader)
 
 	// return immediately if we can't cache
-        if req.Method != "GET" || key == "" {
+	if req.Method != "GET" || key == "" {
 		resp, err = r.upstream.RoundTrip(req)
 		r.log(req, resp, "SKIP")
 		return
@@ -45,11 +45,11 @@ func (r *roundTripper) RoundTrip(req *http.Request) (resp *http.Response, err er
 			return upstreamResp, err
 		}
 
-                // only cache GET 2xx statuses
-                if upstreamResp.StatusCode < 200 || upstreamResp.StatusCode > 200 {
-                        r.log(req, upstreamResp, "SKIP")
-                        return upstreamResp, nil
-                }
+		// only cache GET 2xx statuses
+		if upstreamResp.StatusCode < 200 || upstreamResp.StatusCode > 200 {
+			r.log(req, upstreamResp, "SKIP")
+			return upstreamResp, nil
+		}
 
 		if err := r.cache.WriteStream(key, upstreamResp.Body, false); err != nil {
 			panic(err)
