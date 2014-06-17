@@ -61,10 +61,4 @@ func NewPackageProxy(config Config) (*PackageProxy, error) {
 	}
 
 	return &PackageProxy{Handler: handler, Config: config}, nil
-
-}
-
-func (p *PackageProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
-	log.Printf("Proxying %s %s", req.Method, req.URL.String())
-	p.Handler.ServeHTTP(rw, req)
 }
