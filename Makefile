@@ -17,7 +17,7 @@ build: $(foreach build, $(BUILDS), bin/$(build)/$(NAME))
 
 bin/%/$(NAME): deps
 	@mkdir -p bin/$*
-	go build -o bin/$*/$(NAME)
+	GOOS=$(firstword $(subst /, ,$*)) GOARCH=$(lastword $(subst /, ,$*)) go build -o bin/$*/$(NAME)
 
 release: build $(foreach build, $(BUILDS), release/$(VERSION)/$(build))
 
@@ -36,14 +36,14 @@ deps:
 docker: clean build
 	docker build --tag="lox24/package-proxy" .
 
-docker-run: docker
+docker-run:
 	docker run \
 		--name package-proxy \
 		--detach \
 		--publish 3142:3142 \
 		--volume /tmp/vagrant-cache/generic:/tmp/cache \
-		package-proxy
+		lox24/package-proxy
 
-docker-release: docker
+docker-release:
 	docker tag lox24/package-proxy:latest lox24/package-proxy:$(DOCKER_VERSION)
 	docker push lox24/package-proxy:$(DOCKER_VERSION)
