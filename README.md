@@ -17,7 +17,7 @@ A caching reverse proxy designed for caching package managers. Generates self-si
 Via Docker:
 
 ```bash
-docker run --tty --interactive --rm --publish 3142:3142 lox/package-proxy:latest      
+docker run --tty --interactive --rm --publish 3142:3142 lox24/package-proxy:latest
 ```
 
 As a binary:

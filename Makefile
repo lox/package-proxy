@@ -31,6 +31,6 @@ docker-run:
 		--volume /projects/go:/gopath \
 		package-proxy
 
-docker-release:
+docker-release: docker
 	docker tag package-proxy lox24/package-proxy:latest
 	docker push lox24/package-proxy:latest
