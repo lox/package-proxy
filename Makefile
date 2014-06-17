@@ -1,36 +1,48 @@
 #!/usr/bin/make -f
 
-GIT_VERSION := $(shell git describe --tags --abbrev=4 --always --dirty)
+NAME := package-proxy
+VERSION := $(shell git describe --tags --abbrev=4 --always)
+BUILD_ARCHS := amd64
+BUILD_OOS := linux darwin
+BUILDS = $(foreach oos, $(BUILD_OOS), \
+	$(foreach arch, $(BUILD_ARCHS), $(oos)/$(arch)))
+
+.PHONY: clean build release docker docker-run docker-release
 
 clean:
-	-rm -rf release
-	-rm -rf packageproxy
+	-rm -rf bin/ release/ package-proxy
 
-build: deps
-	go build .
+build: $(foreach build, $(BUILDS), bin/$(build)/$(NAME))
 
-release: deps
-	@mkdir -p release/${GIT_VERSION}/linux-amd64 release/${GIT_VERSION}/darwin-amd64
-	GOARCH=amd64 GOOS=linux  go build -o release/${GIT_VERSION}/linux-amd64/package-proxy
-	GOARCH=amd64 GOOS=darwin go build -o release/${GIT_VERSION}/darwin-amd64/package-proxy
-	zip -D release/${GIT_VERSION}_linux-amd64.zip release/${GIT_VERSION}/linux-amd64/package-proxy
-	zip -D release/${GIT_VERSION}_darwin-amd64.zip release/${GIT_VERSION}/darwin-amd64/package-proxy
+bin/%/$(NAME): deps
+	@mkdir -p bin/$*
+	go build -o bin/$*/$(NAME)
+
+release: build $(foreach build, $(BUILDS), release/$(VERSION)/$(build))
+
+release/$(VERSION)/%: release/$(VERSION)
+	github-release upload --user lox --repo $(NAME) --tag $(VERSION) \
+		--name "$(NAME)-$(subst /,-,$*)" --file bin/$(*)/$(NAME)
+	cp bin/$(*)/$(NAME) release/$(VERSION)/$(subst /,-,$*)
+
+release/$(VERSION):
+	github-release release --user lox --repo $(NAME) --tag $(VERSION)
+	@mkdir -p release/$(VERSION)
 
 deps:
-	go get -u
+	go get
 
-docker: clean
-	GOARCH=amd64 GOOS=linux go build -o package-proxy-linux-amd64
+docker: clean build
 	docker build --tag="package-proxy" .
-	-rm package-proxy-linux-amd64
 
 docker-run: docker
 	docker run \
 		--tty --interactive --rm --publish 3142:3142 \
-		--volume /tmp/cache:/tmp/cache \
-		--volume /projects/go:/gopath \
+		--volume /tmp/vagrant-cache/generic:/tmp/cache \
 		package-proxy
 
 docker-release: docker
+	docker tag package-proxy lox24/package-proxy:$(subst v,,$(VERSION))
+	docker push lox24/package-proxy:$(subst v,,$(VERSION))
 	docker tag package-proxy lox24/package-proxy:latest
 	docker push lox24/package-proxy:latest

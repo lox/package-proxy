@@ -6,4 +6,4 @@ ENTRYPOINT ["/package-proxy"]
 CMD ["-dir","/tmp/cache"]
 EXPOSE 3142
 
-ADD package-proxy-linux-amd64 /package-proxy
+ADD bin/linux/amd64/package-proxy /package-proxy

@@ -56,4 +56,16 @@ echo 'Acquire::http::proxy "https://x.x.x.x:3142/";' >> /etc/apt/apt.conf
 echo 'Acquire::https::proxy "https://x.x.x.x:3142/";' >> /etc/apt/apt.conf
 ```
 
+### Development / Releasing
+
+```bash
+go get github.com/aktau/github-release
+
+github-release release \
+    --user lox \
+    --repo package-proxy \
+    --tag v0.1.0 \
+    --name "Initial release"
+
+
 
