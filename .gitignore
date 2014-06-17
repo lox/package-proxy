@@ -1,4 +1,4 @@
 certs/private.key
 certs/public.pem
 release/
-packageproxy
+package-proxy

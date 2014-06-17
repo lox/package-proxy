@@ -30,3 +30,7 @@ docker-run:
 		--volume /tmp/cache:/tmp/cache \
 		--volume /projects/go:/gopath \
 		package-proxy
+
+docker-release:
+	docker tag package-proxy lox24/package-proxy:latest
+	docker push lox24/package-proxy:latest

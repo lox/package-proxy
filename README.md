@@ -2,13 +2,14 @@
 
 A caching reverse proxy designed for caching package managers. Generates self-signed certificates on the fly to allow caching of https resources.
 
-Currently supported:
-  - Apt/Ubuntu
+**Currently supported:**
+  * Apt/Ubuntu
 
-Planned
-  - Composer
-  - RubyGems
-  - Npm
+**Planned**
+  * Composer
+  * RubyGems
+  * Npm
+  * Docker Registry
 
 
 ## Running
@@ -16,15 +17,14 @@ Planned
 Via Docker:
 
 ```bash
-docker build --rm=true --tag="packageproxy" .
-docker run --tty --interactive --rm --publish 3142:3142 packageproxy      
+docker run --tty --interactive --rm --publish 3142:3142 lox/package-proxy:latest      
 ```
 
 As a binary:
 
 ```bash
-go get github.com/lox/packageproxy 
-packageproxy
+go get github.com/lox/package-proxy 
+$GOBIN/package-proxy
 ```
 
 
@@ -40,8 +40,9 @@ export HTTPS_PROXY=https://localhost:3142
 Because Package Proxy uses generated SSL certificates (effectively a MITM attack), you need to install the certificate that it generates as a trusted root. **Do not do this unless you understand the security implications**.
 
 ```bash
-sudo mkdir /usr/share/ca-certificates/packageproxy
-sudo packageproxy -cert > /usr/share/ca-certificates/packageproxy/packageproxy.crt
+# NOT IMPLEMENTED YET, copy cert from certs dir
+sudo mkdir /usr/share/ca-certificates/package-proxy
+sudo packageproxy -cert > /usr/share/ca-certificates/package-proxy/package-proxy.crt
 sudo dpkg-reconfigure ca-certificates
 ```
 

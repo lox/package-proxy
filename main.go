@@ -20,14 +20,17 @@ func main() {
 		fmt.Println("Usage: package-proxy [options]")
 		fmt.Println("\nOptions:")
 		fmt.Printf("  -dir=.cache    The dir to store cache data in\n")
+		fmt.Printf("  -tls=true      Enable tls and dynamic certificate generation\n")
 	}
 
 	cacheDir := flag.String("dir", ".cache", "The dir to store cache data in")
+	enableTls := flag.Bool("tls", false, "Enable tls and dynamic certificate generation")
 	flag.Parse()
 
 	log.Printf("storing cache in %s", *cacheDir)
 
 	config := server.Config{
+		EnableTls:    *enableTls,
 		CacheDir:     *cacheDir,
 		CacheSizeMax: 1024 << 20, // 1GB
 		Providers: []providers.Provider{
@@ -40,6 +43,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	log.Println("proxy listening on", PROXY_ADDR)
+	protocol := "http"
+	if config.EnableTls {
+		protocol = "https"
+	}
+
+	log.Printf("proxy listening on %s://%s", protocol, PROXY_ADDR)
 	log.Fatal(http.ListenAndServe(PROXY_ADDR, pc))
 }
