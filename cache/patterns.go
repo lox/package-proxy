@@ -1,40 +1,29 @@
 package cache
 
 import (
-	"fmt"
 	"regexp"
 	"time"
 )
 
-type RefreshPattern struct {
-	Pattern  string
-	Duration string
+// NewPattern creates a new cache pattern, panics on parse error
+func NewPattern(pattern string, d time.Duration) *cachePattern {
+	return &cachePattern{Regexp: regexp.MustCompile(pattern), Duration: d}
 }
 
-type ParsedRefreshPattern struct {
+type cachePattern struct {
 	*regexp.Regexp
-	pattern  string
 	Duration time.Duration
 }
 
-func ParseRefreshPatterns(source []RefreshPattern) ([]ParsedRefreshPattern, error) {
-	patterns := make([]ParsedRefreshPattern, len(source))
+type CachePatternSlice []*cachePattern
 
-	for idx, p := range source {
-		r, err := regexp.Compile(p.Pattern)
-		if err != nil {
-			return nil, err
+// MatchString tries to match a given string across all patterns
+func (r CachePatternSlice) MatchString(subject string) (bool, *cachePattern) {
+	for _, p := range r {
+		if p.MatchString(subject) {
+			return true, p
 		}
-		d, err := time.ParseDuration(p.Duration)
-		if err != nil {
-			return nil, err
-		}
-		patterns[idx] = ParsedRefreshPattern{r, p.Pattern, d}
 	}
 
-	return patterns, nil
-}
-
-func (p *ParsedRefreshPattern) String() string {
-	return fmt.Sprintf("%s %s", p.pattern, p.Duration.String())
+	return false, nil
 }

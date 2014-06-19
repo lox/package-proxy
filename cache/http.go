@@ -1,17 +1,16 @@
 package cache
 
 import (
+	"bufio"
 	"bytes"
-	"io/ioutil"
 	"log"
 	"net/http"
+	"net/http/httputil"
+	"path/filepath"
 )
 
 const (
-	ProxiedHeader  = "X-PackageProxy-Proxied"
-	CachedHeader   = "X-PackageProxy-Cached"
-	MaxAgeHeader   = "X-PackageProxy-MaxAge"
-	CacheKeyHeader = "X-PackageProxy-Key"
+	MaxAgeHeader = "X-PackageProxy-MaxAge"
 )
 
 func CachedRoundTripper(c Cache, upstream http.RoundTripper) *roundTripper {
@@ -24,16 +23,18 @@ type roundTripper struct {
 	cache    Cache
 }
 
-func (r *roundTripper) RoundTrip(req *http.Request) (resp *http.Response, err error) {
-	key := req.Header.Get(CacheKeyHeader)
+func (r *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	// TODO: respect max-age
+	// maxAge := req.Header.Get(MaxAgeHeader)
 
 	// return immediately if we can't cache
-	if req.Method != "GET" || key == "" {
-		resp, err = r.upstream.RoundTrip(req)
+	if !r.isRequestCacheable(req) {
+		resp, err := r.upstream.RoundTrip(req)
 		r.log(req, resp, "SKIP")
-		return
+		return resp, err
 	}
 
+	key := r.cacheKey(req)
 	cacheStatus := "HIT"
 
 	// populate the cache if needed
@@ -51,7 +52,14 @@ func (r *roundTripper) RoundTrip(req *http.Request) (resp *http.Response, err er
 			return upstreamResp, nil
 		}
 
-		if err := r.cache.WriteStream(key, upstreamResp.Body, false); err != nil {
+		b, err := httputil.DumpResponse(upstreamResp, true)
+		if err != nil {
+			panic(err)
+		}
+
+		defer upstreamResp.Body.Close()
+		err = r.cache.WriteStream(key, bytes.NewReader(b), false)
+		if err != nil {
 			panic(err)
 		}
 	}
@@ -61,27 +69,35 @@ func (r *roundTripper) RoundTrip(req *http.Request) (resp *http.Response, err er
 		return nil, err
 	}
 
-	// buffer into memory for Content-Length :(
-	buffer := new(bytes.Buffer)
-	buffer.ReadFrom(stream)
-	stream.Close()
+	b := bufio.NewReader(stream)
+	defer stream.Close()
 
-	resp = new(http.Response)
-	resp.Status = "200 OK"
-	resp.StatusCode = 200
-	resp.Proto = "HTTP/1.0"
-	resp.ProtoMajor = 1
-	resp.ProtoMinor = 0
-	resp.Body = ioutil.NopCloser(buffer)
-	resp.Request = req
-	resp.ContentLength = int64(buffer.Len())
-	resp.Header = http.Header{}
-	resp.Header.Set(CachedHeader, "1")
-	resp.Header.Set(CacheKeyHeader, key)
+	resp, err := http.ReadResponse(b, req)
+	if err != nil {
+		panic(err)
+	}
 
 	r.log(req, resp, cacheStatus)
+	return resp, err
+}
 
-	return
+func (r *roundTripper) isRequestCacheable(req *http.Request) bool {
+	if req.Header.Get(MaxAgeHeader) == "" {
+		return false
+	}
+
+	switch req.Method {
+	case "GET":
+		return true
+	case "HEAD":
+		return true
+	}
+
+	return false
+}
+
+func (r *roundTripper) cacheKey(req *http.Request) string {
+	return filepath.Join(req.URL.Host, req.URL.Path+"/"+req.Method)
 }
 
 func (r *roundTripper) log(req *http.Request, resp *http.Response, status string) {

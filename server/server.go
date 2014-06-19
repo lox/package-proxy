@@ -6,40 +6,47 @@ import (
 	"net/http/httputil"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/lox/package-proxy/cache"
 	"github.com/lox/package-proxy/crypto"
-	"github.com/lox/package-proxy/providers"
-	"github.com/peterbourgon/diskv"
 )
+
+var cachePatterns = cache.CachePatternSlice{
+	cache.NewPattern(`deb$`, time.Hour*1000),
+	cache.NewPattern(`udeb$`, time.Hour*1000),
+	cache.NewPattern(`DiffIndex$`, time.Hour*24),
+	cache.NewPattern(`PackagesIndex$`, time.Hour*24),
+	cache.NewPattern(`Packages\.(bz2|gz|lzma)$`, time.Hour*24),
+	cache.NewPattern(`SourcesIndex$`, time.Hour*24),
+	cache.NewPattern(`Sources\.(bz2|gz|lzma)$`, time.Hour*24),
+	cache.NewPattern(`Release$`, time.Hour*24),
+	cache.NewPattern(`Translation-(en|fr)\.(gz|bz2|bzip2|lzma)$`, time.Hour*24),
+	cache.NewPattern(`Sources\.lzma$`, time.Hour*24),
+}
 
 type PackageProxy struct {
 	http.Handler
 	Config Config
 }
 
-type RequestRewriter interface {
+type Rewriter interface {
 	Rewrite(req *http.Request)
 }
 
+type RewriterFunc func(req *http.Request)
+
 func NewPackageProxy(config Config) (*PackageProxy, error) {
 
-	// basic disk-backed cache, keys are filenames
-	diskCache := diskv.New(diskv.Options{
-		BasePath: config.CacheDir,
-		Transform: func(key string) []string {
-			path := filepath.Join(config.CacheDir, key)
-			os.MkdirAll(filepath.Dir(path), 0700)
-			return []string{}
-		},
-		CacheSizeMax: config.CacheSizeMax,
-	})
+	diskCache, err := cache.NewFileCache(config.CacheDir)
+	if err != nil {
+		return nil, err
+	}
 
 	proxy := &httputil.ReverseProxy{
-		Director: func(r *http.Request) {},
-		Transport: providers.ProviderRoundTripper(config.Providers,
-			cache.CachedRoundTripper(diskCache, &http.Transport{}),
-		),
+		Director: func(r *http.Request) {
+		},
+		Transport: cache.CachedRoundTripper(diskCache, &http.Transport{}),
 	}
 
 	var handler http.Handler
@@ -51,7 +58,8 @@ func NewPackageProxy(config Config) (*PackageProxy, error) {
 			panic(err)
 		}
 
-		log.Printf("using certificate %s for dynamic cert generation", filepath.Join(path, "certs/public.pem"))
+		log.Printf("using certificate %s for dynamic cert generation",
+			filepath.Join(path, "certs/public.pem"))
 
 		// unwraps TLS with generated certificates
 		handler, err = crypto.UnwrapTlsHandler(proxy, "certs/private.key", "certs/public.pem")
@@ -61,4 +69,13 @@ func NewPackageProxy(config Config) (*PackageProxy, error) {
 	}
 
 	return &PackageProxy{Handler: handler, Config: config}, nil
+}
+
+func (p *PackageProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+	match, pattern := cachePatterns.MatchString(req.URL.String())
+	if match {
+		req.Header.Set(cache.MaxAgeHeader, pattern.Duration.String())
+	}
+
+	p.Handler.ServeHTTP(rw, req)
 }
