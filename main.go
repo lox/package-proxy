@@ -29,7 +29,7 @@ var cachePatterns = cache.CachePatternSlice{
 	cache.NewPattern(`Packages\.(bz2|gz|lzma)$`, time.Hour),
 	cache.NewPattern(`SourcesIndex$`, time.Hour),
 	cache.NewPattern(`Sources\.(bz2|gz|lzma)$`, time.Hour),
-	cache.NewPattern(`Release$`, time.Hour),
+	cache.NewPattern(`Release(\.gpg)?$`, time.Hour),
 	cache.NewPattern(`Translation-(en|fr)\.(gz|bz2|bzip2|lzma)$`, time.Hour),
 	cache.NewPattern(`Sources\.lzma$`, time.Hour),
 }
