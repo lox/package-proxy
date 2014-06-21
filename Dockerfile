@@ -6,4 +6,4 @@ ADD bin/linux/amd64/package-proxy /package-proxy
 VOLUME ["/tmp/cache"]
 ENTRYPOINT ["/package-proxy"]
 CMD ["-dir","/tmp/cache"]
-EXPOSE 3142
+EXPOSE 3142 3143

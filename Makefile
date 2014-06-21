@@ -43,6 +43,7 @@ docker-run:
 		--tty --interactive --rm \
 		--name package-proxy \
 		--publish 3142:3142 \
+		--publish 3143:3143 \
 		--volume /tmp/vagrant-cache/generic:/tmp/cache \
 		lox24/package-proxy
 

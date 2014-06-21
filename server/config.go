@@ -7,7 +7,6 @@ import (
 )
 
 type Config struct {
-	EnableTls bool
 	Rewriters []Rewriter
 	Upstream  http.RoundTripper
 	Cache     cache.Cache

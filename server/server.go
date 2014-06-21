@@ -1,14 +1,10 @@
 package server
 
 import (
-	"log"
 	"net/http"
 	"net/http/httputil"
-	"os"
-	"path/filepath"
 
 	"github.com/lox/package-proxy/cache"
-	"github.com/lox/package-proxy/crypto"
 )
 
 type PackageProxy struct {
@@ -70,22 +66,6 @@ func NewPackageProxy(config *Config) (*PackageProxy, error) {
 
 	var handler http.Handler
 	handler = proxy
-
-	if config.EnableTls {
-		path, err := os.Getwd()
-		if err != nil {
-			panic(err)
-		}
-
-		log.Printf("using certificate %s for dynamic cert generation",
-			filepath.Join(path, "certs/public.pem"))
-
-		// unwraps TLS with generated certificates
-		handler, err = crypto.UnwrapTlsHandler(proxy, "certs/private.key", "certs/public.pem")
-		if err != nil {
-			return nil, err
-		}
-	}
 
 	return &PackageProxy{
 		Handler:   handler,

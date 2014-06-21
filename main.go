@@ -5,17 +5,23 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/lox/package-proxy/cache"
+	"github.com/lox/package-proxy/crypto"
 	"github.com/lox/package-proxy/server"
 	"github.com/lox/package-proxy/ubuntu"
 )
 
 const (
-	PROXY_ADDR = "0.0.0.0:3142"
-	day        = time.Hour * 24
-	week       = day * 7
+	listenHttp  = "0.0.0.0:3142"
+	listenHttps = "0.0.0.0:3143"
+	day         = time.Hour * 24
+	week        = day * 7
+	cacheSize   = 10 << 20 // 10Gb
 )
 
 var version string
@@ -34,7 +40,13 @@ var cachePatterns = cache.CachePatternSlice{
 	cache.NewPattern(`Sources\.lzma$`, time.Hour),
 }
 
-func main() {
+type flags struct {
+	EnableUbuntuRewriting bool
+	EnableTlsUnwrapping   bool
+	CacheDir              string
+}
+
+func parseFlags() flags {
 	flag.Usage = func() {
 		fmt.Println("Usage: package-proxy [options]")
 		fmt.Println("\nOptions:")
@@ -48,21 +60,49 @@ func main() {
 	enableUbuntu := flag.Bool("ubuntu", true, "Rewrite ubuntu urls to the fastest mirror")
 	flag.Parse()
 
+	return flags{
+		EnableUbuntuRewriting: *enableUbuntu,
+		EnableTlsUnwrapping:   *enableTls,
+		CacheDir:              *cacheDir,
+	}
+}
+
+func enableTls(handler http.Handler) (http.Handler, error) {
+	path, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+
+	log.Printf("using certificate %s for dynamic cert generation",
+		filepath.Join(path, "certs/public.pem"))
+
+	// unwraps TLS with generated certificates
+	handler, err = crypto.UnwrapTlsHandler(handler,
+		"certs/private.key", "certs/public.pem")
+
+	if err != nil {
+		return nil, err
+	}
+
+	return handler, nil
+}
+
+func main() {
+	flags := parseFlags()
+
 	log.Printf("running package-proxy %s", version)
 
-	// disk-backed cache, 10GB
-	cache, err := cache.NewDiskCache(*cacheDir, 10<<20)
+	cache, err := cache.NewDiskCache(flags.CacheDir, cacheSize)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	config := &server.Config{
-		EnableTls: *enableTls,
-		Cache:     cache,
-		Patterns:  cachePatterns,
+		Cache:    cache,
+		Patterns: cachePatterns,
 	}
 
-	if *enableUbuntu {
+	if flags.EnableUbuntuRewriting {
 		log.Printf("enabling ubuntu mirror rewriting")
 		config.Rewriters = append(config.Rewriters, ubuntu.NewRewriter())
 	}
@@ -72,11 +112,26 @@ func main() {
 		log.Fatal(err)
 	}
 
-	protocol := "http"
-	if *enableTls {
-		protocol = "https"
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func() {
+		log.Printf("http proxy listening on http://%s", listenHttp)
+		log.Fatal(http.ListenAndServe(listenHttp, proxy))
+	}()
+
+	if flags.EnableTlsUnwrapping {
+		wg.Add(1)
+
+		handler, err := enableTls(proxy)
+		if err != nil {
+			log.Fatal(err)
+		}
+		go func() {
+			log.Printf("https proxy listening on https://%s", listenHttps)
+			log.Fatal(http.ListenAndServe(listenHttps, handler))
+		}()
 	}
 
-	log.Printf("proxy listening on %s://%s", protocol, PROXY_ADDR)
-	log.Fatal(http.ListenAndServe(PROXY_ADDR, proxy))
+	wg.Wait()
 }

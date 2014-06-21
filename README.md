@@ -17,7 +17,7 @@ A caching reverse proxy designed for caching package managers. Generates self-si
 Via Docker:
 
 ```bash
-docker run --tty --interactive --rm --publish 3142:3142 lox24/package-proxy:latest
+docker run --tty --interactive --rm --publish 3142:3142 --publish 3143:3143 lox24/package-proxy:latest
 ```
 
 As a binary:
@@ -27,6 +27,11 @@ go get github.com/lox/package-proxy
 $GOBIN/package-proxy
 ```
 
+By default package-proxy will only run the http proxy, to enable the https proxy:
+
+```bash
+$GOBIN/package-proxy -tls
+```
 
 ## Configuring Package Managers
 
@@ -34,7 +39,7 @@ Where possible, Package Proxy is designed to work as an https/http proxy, so und
 
 ```bash
 export HTTP_PROXY=https://localhost:3142
-export HTTPS_PROXY=https://localhost:3142
+export HTTPS_PROXY=https://localhost:3143
 ```
 
 Because Package Proxy uses generated SSL certificates (effectively a MITM attack), you need to install the certificate that it generates as a trusted root. **Do not do this unless you understand the security implications**.
@@ -53,7 +58,7 @@ Apt will respect `HTTPS_PROXY`, but if you'd rather configure it manually
 
 ```bash
 echo 'Acquire::http::proxy "https://x.x.x.x:3142/";' >> /etc/apt/apt.conf
-echo 'Acquire::https::proxy "https://x.x.x.x:3142/";' >> /etc/apt/apt.conf
+echo 'Acquire::https::proxy "https://x.x.x.x:3143/";' >> /etc/apt/apt.conf
 ```
 
 ### Development / Releasing
@@ -66,6 +71,7 @@ github-release release \
     --repo package-proxy \
     --tag v0.1.0 \
     --name "Initial release"
+```
 
 
 
