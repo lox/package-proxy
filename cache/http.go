@@ -44,9 +44,14 @@ func (r *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	// return immediately if we can't cache
 	if !isRequestCacheable(req) {
 		resp, err := r.upstream.RoundTrip(req)
+		if err != nil {
+			log.Println(err)
+			return resp, err
+		}
+
 		resp.Header.Set(CacheHeader, "SKIP")
 		logRequest(req, resp, "SKIP")
-		return resp, err
+		return resp, nil
 	}
 
 	key := cacheKey(req)
