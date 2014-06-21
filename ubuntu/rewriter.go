@@ -40,7 +40,6 @@ func NewRewriter() *ubuntuRewriter {
 }
 
 func (ur *ubuntuRewriter) Rewrite(r *http.Request) {
-	log.Printf("Attempting to rewrite %s", r.URL.String())
 	url := r.URL.String()
 	if ur.mirror != nil && hostPattern.MatchString(url) {
 		m := hostPattern.FindAllStringSubmatch(url, -1)
