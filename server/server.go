@@ -57,6 +57,9 @@ func NewPackageProxy(config *Config) (*PackageProxy, error) {
 
 	proxy := &httputil.ReverseProxy{
 		Director: func(r *http.Request) {
+			// strip conditional request headers
+			r.Header.Del("If-Modified-Since")
+
 			// these get applied to the upstream request
 			for _, rewrite := range config.Rewriters {
 				rewrite.Rewrite(r)
