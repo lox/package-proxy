@@ -18,13 +18,13 @@ var hostPattern = regexp.MustCompile(
 func NewRewriter() *ubuntuRewriter {
 	u := &ubuntuRewriter{}
 
-	mirrors, err := GetGeoMirrors()
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	// benchmark in the background to make sure we have the fastest
 	go func() {
+		mirrors, err := GetGeoMirrors()
+		if err != nil {
+			log.Fatal(err)
+		}
+
 		mirror, err := mirrors.Fastest()
 		if err != nil {
 			log.Println(err)
@@ -40,6 +40,7 @@ func NewRewriter() *ubuntuRewriter {
 }
 
 func (ur *ubuntuRewriter) Rewrite(r *http.Request) {
+	log.Printf("Attempting to rewrite %s", r.URL.String())
 	url := r.URL.String()
 	if ur.mirror != nil && hostPattern.MatchString(url) {
 		m := hostPattern.FindAllStringSubmatch(url, -1)

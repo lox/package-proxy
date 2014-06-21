@@ -3,15 +3,31 @@ package cache
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"log"
 	"net/http"
 	"net/http/httputil"
 	"path/filepath"
+	"time"
 )
 
 const (
-	MaxAgeHeader = "X-PackageProxy-MaxAge"
+	MaxAgeHeader       = "X-Package-Proxy-MaxAge"
+	CacheHeader        = "X-Package-Proxy"
+	CanonicalUrlHeader = "X-Canonical-Url"
 )
+
+// http://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html#sec13.5.1
+var ignoredHeaders = []string{
+	"Connection",
+	"Keep-Alive",
+	"Proxy-Authenticate",
+	"Proxy-Authorization",
+	"TE",
+	"Trailers",
+	"Transfer - Encoding",
+	"Upgrade",
+}
 
 func CachedRoundTripper(c Cache, upstream http.RoundTripper) *roundTripper {
 	return &roundTripper{upstream: upstream, cache: c}
@@ -24,17 +40,16 @@ type roundTripper struct {
 }
 
 func (r *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	// TODO: respect max-age
-	// maxAge := req.Header.Get(MaxAgeHeader)
 
 	// return immediately if we can't cache
-	if !r.isRequestCacheable(req) {
+	if !isRequestCacheable(req) {
 		resp, err := r.upstream.RoundTrip(req)
-		r.log(req, resp, "SKIP")
+		resp.Header.Set(CacheHeader, "SKIP")
+		logRequest(req, resp, "SKIP")
 		return resp, err
 	}
 
-	key := r.cacheKey(req)
+	key := cacheKey(req)
 	cacheStatus := "HIT"
 
 	// populate the cache if needed
@@ -48,8 +63,23 @@ func (r *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 
 		// only cache GET 2xx statuses
 		if upstreamResp.StatusCode < 200 || upstreamResp.StatusCode > 200 {
-			r.log(req, upstreamResp, "SKIP")
+			logRequest(req, upstreamResp, "SKIP")
 			return upstreamResp, nil
+		}
+
+		var maxAge time.Duration
+
+		// TODO: check response max-age
+		if m := req.Header.Get(MaxAgeHeader); m != "" {
+			maxAge, err = time.ParseDuration(m)
+			if err != nil {
+				log.Println(err)
+			}
+		}
+
+		// strip unwanted response headers
+		for _, h := range ignoredHeaders {
+			upstreamResp.Header.Del(h)
 		}
 
 		b, err := httputil.DumpResponse(upstreamResp, true)
@@ -58,13 +88,13 @@ func (r *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 
 		defer upstreamResp.Body.Close()
-		err = r.cache.WriteStream(key, bytes.NewReader(b), false)
+		err = r.cache.Write(key, bytes.NewReader(b), maxAge)
 		if err != nil {
 			panic(err)
 		}
 	}
 
-	stream, err := r.cache.ReadStream(key)
+	stream, err := r.cache.Read(key)
 	if err != nil {
 		return nil, err
 	}
@@ -77,11 +107,28 @@ func (r *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 		panic(err)
 	}
 
-	r.log(req, resp, cacheStatus)
+	if age, err := calculateAge(resp); err != nil {
+		log.Println("unable to parse date header", err)
+	} else {
+		resp.Header.Set("Age", fmt.Sprintf("%.f", age.Seconds()))
+	}
+
+	resp.Header.Set(CacheHeader, fmt.Sprintf("%s", cacheStatus))
+
+	logRequest(req, resp, cacheStatus)
 	return resp, err
 }
 
-func (r *roundTripper) isRequestCacheable(req *http.Request) bool {
+func calculateAge(resp *http.Response) (d time.Duration, err error) {
+	stored, err := http.ParseTime(resp.Header.Get("Date"))
+	if err != nil {
+		return d, err
+	}
+
+	return time.Now().Sub(stored), nil
+}
+
+func isRequestCacheable(req *http.Request) bool {
 	if req.Header.Get(MaxAgeHeader) == "" {
 		return false
 	}
@@ -96,11 +143,21 @@ func (r *roundTripper) isRequestCacheable(req *http.Request) bool {
 	return false
 }
 
-func (r *roundTripper) cacheKey(req *http.Request) string {
-	return filepath.Join(req.URL.Host, req.URL.Path+"/"+req.Method)
+func cacheKey(req *http.Request) string {
+	url := req.URL
+
+	if h := req.Header.Get(CanonicalUrlHeader); h != "" {
+		if u, err := url.Parse(h); err == nil {
+			url = u
+		} else {
+			log.Printf("ignoring invalid canonical url %s", h)
+		}
+	}
+
+	return filepath.Join(url.Host, url.Path+"/"+req.Method)
 }
 
-func (r *roundTripper) log(req *http.Request, resp *http.Response, status string) {
+func logRequest(req *http.Request, resp *http.Response, status string) {
 	if status == "HIT" {
 		status = "\x1b[32;1m" + status + "\x1b[0m"
 	} else if status == "MISS" {

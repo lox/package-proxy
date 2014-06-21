@@ -6,28 +6,17 @@ import (
 	"net/http/httputil"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/lox/package-proxy/cache"
 	"github.com/lox/package-proxy/crypto"
 )
 
-var cachePatterns = cache.CachePatternSlice{
-	cache.NewPattern(`deb$`, time.Hour*1000),
-	cache.NewPattern(`udeb$`, time.Hour*1000),
-	cache.NewPattern(`DiffIndex$`, time.Hour*24),
-	cache.NewPattern(`PackagesIndex$`, time.Hour*24),
-	cache.NewPattern(`Packages\.(bz2|gz|lzma)$`, time.Hour*24),
-	cache.NewPattern(`SourcesIndex$`, time.Hour*24),
-	cache.NewPattern(`Sources\.(bz2|gz|lzma)$`, time.Hour*24),
-	cache.NewPattern(`Release$`, time.Hour*24),
-	cache.NewPattern(`Translation-(en|fr)\.(gz|bz2|bzip2|lzma)$`, time.Hour*24),
-	cache.NewPattern(`Sources\.lzma$`, time.Hour*24),
-}
-
 type PackageProxy struct {
-	http.Handler
-	Config Config
+	Handler   http.Handler
+	Cache     cache.Cache
+	Transport *http.Transport
+	Rewriters []Rewriter
+	Patterns  cache.CachePatternSlice
 }
 
 type Rewriter interface {
@@ -36,17 +25,44 @@ type Rewriter interface {
 
 type RewriterFunc func(req *http.Request)
 
-func NewPackageProxy(config Config) (*PackageProxy, error) {
+// Rewrite calls f(req).
+func (f RewriterFunc) Rewrite(req *http.Request) {
+	f(req)
+}
 
-	diskCache, err := cache.NewFileCache(config.CacheDir)
-	if err != nil {
+func applyConfigDefaults(config *Config) error {
+	if config.Upstream == nil {
+		config.Upstream = &http.Transport{}
+	}
+
+	if config.Patterns == nil {
+		config.Patterns = cache.CachePatternSlice{}
+	}
+
+	if config.Cache == nil {
+		cache, err := cache.NewDiskCache("", 1<<20)
+		if err != nil {
+			return err
+		}
+		config.Cache = cache
+	}
+
+	return nil
+}
+
+func NewPackageProxy(config *Config) (*PackageProxy, error) {
+	if err := applyConfigDefaults(config); err != nil {
 		return nil, err
 	}
 
 	proxy := &httputil.ReverseProxy{
 		Director: func(r *http.Request) {
+			// these get applied to the upstream request
+			for _, rewrite := range config.Rewriters {
+				rewrite.Rewrite(r)
+			}
 		},
-		Transport: cache.CachedRoundTripper(diskCache, &http.Transport{}),
+		Transport: cache.CachedRoundTripper(config.Cache, config.Upstream),
 	}
 
 	var handler http.Handler
@@ -68,14 +84,20 @@ func NewPackageProxy(config Config) (*PackageProxy, error) {
 		}
 	}
 
-	return &PackageProxy{Handler: handler, Config: config}, nil
+	return &PackageProxy{
+		Handler:   handler,
+		Cache:     config.Cache,
+		Rewriters: config.Rewriters,
+		Patterns:  config.Patterns,
+	}, nil
 }
 
 func (p *PackageProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
-	match, pattern := cachePatterns.MatchString(req.URL.String())
+	match, pattern := p.Patterns.MatchString(req.URL.String())
 	if match {
 		req.Header.Set(cache.MaxAgeHeader, pattern.Duration.String())
 	}
 
+	req.Header.Set("X-Canonical-Url", req.URL.String())
 	p.Handler.ServeHTTP(rw, req)
 }

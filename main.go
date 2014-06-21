@@ -5,28 +5,42 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
+	"time"
 
+	"github.com/lox/package-proxy/cache"
 	"github.com/lox/package-proxy/server"
 	"github.com/lox/package-proxy/ubuntu"
 )
 
 const (
 	PROXY_ADDR = "0.0.0.0:3142"
+	day        = time.Hour * 24
+	week       = day * 7
 )
 
 var version string
 
-var Rewriters []server.Rewriter
+var cachePatterns = cache.CachePatternSlice{
+	// aptitude / ubuntu / debian
+	cache.NewPattern(`deb$`, week),
+	cache.NewPattern(`udeb$`, week),
+	cache.NewPattern(`DiffIndex$`, time.Hour),
+	cache.NewPattern(`PackagesIndex$`, time.Hour),
+	cache.NewPattern(`Packages\.(bz2|gz|lzma)$`, time.Hour),
+	cache.NewPattern(`SourcesIndex$`, time.Hour),
+	cache.NewPattern(`Sources\.(bz2|gz|lzma)$`, time.Hour),
+	cache.NewPattern(`Release$`, time.Hour),
+	cache.NewPattern(`Translation-(en|fr)\.(gz|bz2|bzip2|lzma)$`, time.Hour),
+	cache.NewPattern(`Sources\.lzma$`, time.Hour),
+}
 
 func main() {
 	flag.Usage = func() {
 		fmt.Println("Usage: package-proxy [options]")
 		fmt.Println("\nOptions:")
-		fmt.Printf("  -dir=          The dir to store cache data in\n")
-		fmt.Printf("  -tls=true      Enable tls and dynamic certificate generation\n")
-		fmt.Printf("  -ubuntu=true   Rewrite ubuntu urls to the fastest mirror\n")
+		fmt.Printf("  -dir=            The dir to store cache data in\n")
+		fmt.Printf("  -tls=true        Enable tls and dynamic certificate generation\n")
+		fmt.Printf("  -ubuntu=true     Rewrite ubuntu urls to the fastest mirror\n")
 	}
 
 	cacheDir := flag.String("dir", "", "The dir to store cache data in")
@@ -34,25 +48,26 @@ func main() {
 	enableUbuntu := flag.Bool("ubuntu", true, "Rewrite ubuntu urls to the fastest mirror")
 	flag.Parse()
 
-	// default to a system temp directory
-	if *cacheDir == "" {
-		tmpDir := filepath.Join(os.TempDir(), "package-proxy/default")
-		cacheDir = &tmpDir
+	log.Printf("running package-proxy %s", version)
+
+	// disk-backed cache, 10GB
+	cache, err := cache.NewDiskCache(*cacheDir, 10<<20)
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	log.Printf("running package-proxy %s", version)
-	log.Printf("storing cache in %s", *cacheDir)
+	config := &server.Config{
+		EnableTls: *enableTls,
+		Cache:     cache,
+		Patterns:  cachePatterns,
+	}
 
 	if *enableUbuntu {
 		log.Printf("enabling ubuntu mirror rewriting")
-		Rewriters = append(Rewriters, ubuntu.NewRewriter())
+		config.Rewriters = append(config.Rewriters, ubuntu.NewRewriter())
 	}
 
-	proxy, err := server.NewPackageProxy(server.Config{
-		EnableTls: *enableTls,
-		CacheDir:  *cacheDir,
-		Rewriters: Rewriters,
-	})
+	proxy, err := server.NewPackageProxy(config)
 	if err != nil {
 		log.Fatal(err)
 	}

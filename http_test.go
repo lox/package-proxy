@@ -1,57 +1,48 @@
 package main
 
 import (
+	"bytes"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/lox/package-proxy/cache"
-	"github.com/lox/package-proxy/providers"
 	"github.com/lox/package-proxy/server"
 )
 
 type testFixture struct {
 	proxy, backend *httptest.Server
-	provider       *testProvider
 }
 
-type testProvider struct {
-	matcherFunc func(r *http.Request) bool
-	rewriteFunc func(r *http.Request)
-}
-
-func (p *testProvider) Match(r *http.Request) bool {
-	return p.matcherFunc(r)
-}
-
-func (p *testProvider) Rewrite(r *http.Request) {
-	p.rewriteFunc(r)
-}
-
-func newTestFixture(handler http.HandlerFunc) *testFixture {
-	provider := &testProvider{}
-	pp, err := server.NewPackageProxy(server.Config{Providers: []providers.Provider{
-		provider,
-	}})
-	if err != nil {
-		panic(err)
-	}
-
+func newTestFixture(handler http.HandlerFunc, conf *server.Config) *testFixture {
 	backend := httptest.NewServer(http.HandlerFunc(handler))
 	backendUrl, err := url.Parse(backend.URL)
 	if err != nil {
 		panic(err)
 	}
 
-	provider.matcherFunc = func(r *http.Request) bool {
-		return true
-	}
-	provider.rewriteFunc = func(r *http.Request) {
-		r.URL.Host = backendUrl.Host
+	if conf.Rewriters == nil {
+		conf.Rewriters = []server.Rewriter{}
 	}
 
-	return &testFixture{httptest.NewServer(pp), backend, provider}
+	if conf.Cache == nil {
+		conf.Cache = cache.NewMapCache()
+	}
+
+	// force all requests to rewrite to the test server
+	conf.Rewriters = append(conf.Rewriters, server.RewriterFunc(func(req *http.Request) {
+		req.URL.Host = backendUrl.Host
+	}))
+
+	pp, err := server.NewPackageProxy(conf)
+	if err != nil {
+		panic(err)
+	}
+
+	return &testFixture{httptest.NewServer(pp), backend}
 }
 
 // client returns an http client configured to use the provided proxy
@@ -71,13 +62,19 @@ func (f *testFixture) close() {
 
 func assertHeader(t *testing.T, r *http.Response, header string, expected string) {
 	if r.Header.Get(header) != expected {
-		t.Fatalf("Expected header %s=1, but got '%s'", header, r.Header.Get(header))
+		t.Fatalf("Expected header %s=%s, but got '%s'",
+			header, expected, r.Header.Get(header))
 	}
 }
 
 func TestProxyCachesRequests(t *testing.T) {
-	fixture := newTestFixture(func(w http.ResponseWriter, r *http.Request) {
+	handler := func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Llamas rock"))
+	}
+	fixture := newTestFixture(handler, &server.Config{
+		Patterns: cache.CachePatternSlice{
+			cache.NewPattern(".", time.Hour*100),
+		},
 	})
 	defer fixture.close()
 
@@ -87,8 +84,7 @@ func TestProxyCachesRequests(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assertHeader(t, resp1, cache.ProxiedHeader, "1")
-	assertHeader(t, resp1, cache.CachedHeader, "")
+	assertHeader(t, resp1, cache.CacheHeader, "MISS")
 
 	// second request should be cached
 	resp2, err := fixture.client().Get(fixture.backend.URL)
@@ -96,21 +92,37 @@ func TestProxyCachesRequests(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assertHeader(t, resp2, cache.ProxiedHeader, "1")
-	assertHeader(t, resp2, cache.CachedHeader, "1")
+	assertHeader(t, resp2, cache.CacheHeader, "HIT")
 }
 
-func TestUbuntuRewrites(t *testing.T) {
-	fixture := newTestFixture(func(w http.ResponseWriter, r *http.Request) {
+func TestRewritesApply(t *testing.T) {
+	handler := func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Llamas rock"))
+	}
+	fixture := newTestFixture(handler, &server.Config{
+		Patterns: cache.CachePatternSlice{
+			cache.NewPattern(".", time.Hour*100),
+		},
 	})
 	defer fixture.close()
 
-	resp1, err := fixture.client().Get("http://archive.ubuntu.com/ubuntu/pool/main/b/bind9/dnsutils_9.9.5.dfsg-3_amd64.deb")
+	resp, err := fixture.client().Get(
+		"http://archive.ubuntu.com/ubuntu/pool/main/b/bind9/dnsutils_9.9.5.dfsg-3_amd64.deb")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	assertHeader(t, resp1, cache.ProxiedHeader, "1")
-	assertHeader(t, resp1, cache.CachedHeader, "")
+	contents, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertHeader(t, resp, cache.CacheHeader, "MISS")
+
+	if bytes.Compare(contents, []byte("Llamas rock")) != 0 {
+		t.Fatalf("Response content was incorrect, rewrites not applying?")
+	}
+
+	//assertHeader(t, resp1, cache.ProxiedHeader, "1")
+	//assertHeader(t, resp1, cache.CachedHeader, "")
 }
