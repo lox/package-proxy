@@ -1,7 +1,7 @@
 #!/usr/bin/make -f
 
 NAME := package-proxy
-VERSION := $(shell git describe --tags --abbrev=4 --always)
+VERSION := $(shell git describe --tags --abbrev=4 --dirty --always)
 DOCKER_VERSION := $(subst v,,$(VERSION))
 BUILD_ARCHS := amd64
 BUILD_OOS := linux darwin
@@ -34,10 +34,11 @@ release/$(VERSION):
 deps:
 	go get
 
-docker: clean build
+docker: build
 	docker build --tag="lox24/package-proxy" .
 
 docker-run:
+	-docker rm -f package-proxy
 	docker run \
 		--tty --interactive --rm \
 		--name package-proxy \
