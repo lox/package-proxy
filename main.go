@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lox/package-proxy/api"
 	"github.com/lox/package-proxy/cache"
 	"github.com/lox/package-proxy/crypto"
 	"github.com/lox/package-proxy/server"
@@ -128,9 +129,12 @@ func main() {
 			log.Fatal(err)
 		}
 
+		// https port provides an api too
+		api := api.NewApiHandler(handler)
+
 		go func() {
-			log.Printf("https proxy listening on https://%s", listenHttps)
-			log.Fatal(http.ListenAndServe(listenHttps, handler))
+			log.Printf("https proxy listening on http://%s", listenHttps)
+			log.Fatal(http.ListenAndServe(listenHttps, api))
 		}()
 	}
 
