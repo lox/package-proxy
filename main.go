@@ -127,6 +127,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+
 		go func() {
 			log.Printf("https proxy listening on https://%s", listenHttps)
 			log.Fatal(http.ListenAndServe(listenHttps, handler))
