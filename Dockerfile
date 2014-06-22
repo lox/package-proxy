@@ -5,7 +5,8 @@ RUN apt-get -y install --no-install-recommends golang-go bzr git ca-certificates
 RUN go get github.com/aktau/github-release
 RUN go get github.com/lox/package-proxy
 ADD release-docker.sh /release-docker.sh
+ADD run.sh /run.sh
 ENV GOBIN /go/bin
 ENV PATH $GOBIN:$PATH
 WORKDIR /go/src/github.com/lox
-ENTRYPOINT ["/go/bin/package-proxy","-dir","/tmp/cache"]
+CMD ["/go/bin/package-proxy","-dir","/tmp/cache","-tls"]

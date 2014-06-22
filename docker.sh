@@ -15,13 +15,15 @@ if [ -n "$build" ] ; then
 fi
 
 if [ -n "$run" ] ; then
+  rm package-proxy
   docker rm -f package-proxy &>/dev/null || true
   docker run \
     --tty --interactive --rm \
     --name package-proxy \
     --publish 3142:3142 \
     --publish 3143:3143 \
-    --volume /go/src/$PACKAGE:/go/src/$PACKAGE \
+    --volume /projects/go/src/$PACKAGE:/go/src/$PACKAGE \
     --volume /tmp/vagrant-cache/generic/:/tmp/cache \
+    --entrypoint "/run.sh" \
     lox24/package-proxy "$@"
 fi
