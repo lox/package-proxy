@@ -60,6 +60,9 @@ func NewPackageProxy(config *Config) (*PackageProxy, error) {
 			for _, rewrite := range config.Rewriters {
 				rewrite.Rewrite(r)
 			}
+
+			// reset host header
+			r.Host = r.URL.Host
 		},
 		Transport: cache.CachedRoundTripper(config.Cache, config.Upstream),
 	}

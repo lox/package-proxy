@@ -122,7 +122,4 @@ func TestRewritesApply(t *testing.T) {
 	if bytes.Compare(contents, []byte("Llamas rock")) != 0 {
 		t.Fatalf("Response content was incorrect, rewrites not applying?")
 	}
-
-	//assertHeader(t, resp1, cache.ProxiedHeader, "1")
-	//assertHeader(t, resp1, cache.CachedHeader, "")
 }
