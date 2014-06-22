@@ -66,8 +66,7 @@ func (r *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 			return upstreamResp, err
 		}
 
-		// only cache GET 2xx statuses
-		if upstreamResp.StatusCode < 200 || upstreamResp.StatusCode > 200 {
+		if !isResponseCacheable(upstreamResp) {
 			logRequest(req, upstreamResp, "SKIP")
 			return upstreamResp, nil
 		}
@@ -146,6 +145,16 @@ func isRequestCacheable(req *http.Request) bool {
 	}
 
 	return false
+}
+
+func isResponseCacheable(resp *http.Response) bool {
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return true
+	} else if resp.StatusCode == http.StatusFound {
+		return true
+	} else {
+		return false
+	}
 }
 
 func cacheKey(req *http.Request) string {
