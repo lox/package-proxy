@@ -22,6 +22,7 @@ const (
 	listenHttps = "0.0.0.0:3143"
 	day         = time.Hour * 24
 	week        = day * 7
+	forever     = day * 1000
 	cacheSize   = 10 << 20 // 10Gb
 )
 
@@ -39,6 +40,15 @@ var cachePatterns = cache.CachePatternSlice{
 	cache.NewPattern(`Release(\.gpg)?$`, time.Hour),
 	cache.NewPattern(`Translation-(en|fr)\.(gz|bz2|bzip2|lzma)$`, time.Hour),
 	cache.NewPattern(`Sources\.lzma$`, time.Hour),
+	// composer / packagist
+	cache.NewPattern(`^https?://packagist\.org/(.+)\.json$`, time.Hour),
+	cache.NewPattern(`^https://api.github.com/repos/Seldaek/jsonlint/zipball/1.0.0`, week),
+	// github
+	cache.NewPattern(`^https://codeload.github.com/(.+)/legacy.zip/(.+)$`, week),
+	cache.NewPattern(`^https://api.github.com/repos/(.+)/zipball`, week),
+	// rubygems
+	cache.NewPattern(`/api/v1/dependencies`, day),
+	cache.NewPattern(`gem\$`, week),
 }
 
 type flags struct {
