@@ -28,8 +28,7 @@ func NewDiskCache(baseDir string, size uint64) (Cache, error) {
 		BasePath:     baseDir,
 		CacheSizeMax: size,
 		Transform: func(key string) []string {
-			os.MkdirAll(f.Dir(f.Join(baseDir, defaultPrefix, key)), 0777)
-			return []string{defaultPrefix}
+			return []string{defaultPrefix, key[0:3]}
 		},
 	})
 

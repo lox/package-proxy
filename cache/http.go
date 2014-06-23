@@ -3,11 +3,11 @@ package cache
 import (
 	"bufio"
 	"bytes"
+	"crypto/md5"
 	"fmt"
 	"log"
 	"net/http"
 	"net/http/httputil"
-	"path/filepath"
 	"time"
 )
 
@@ -158,17 +158,14 @@ func isResponseCacheable(resp *http.Response) bool {
 }
 
 func cacheKey(req *http.Request) string {
-	url := req.URL
+	url := req.URL.String()
 
+	// canonical url is set upstream pre-rewrite
 	if h := req.Header.Get(CanonicalUrlHeader); h != "" {
-		if u, err := url.Parse(h); err == nil {
-			url = u
-		} else {
-			log.Printf("ignoring invalid canonical url %s", h)
-		}
+		url = h
 	}
 
-	return filepath.Join(url.Host, url.Path+"/"+req.Method)
+	return fmt.Sprintf("%x", md5.Sum([]byte(url)))
 }
 
 func logRequest(req *http.Request, resp *http.Response, status string) {
