@@ -124,6 +124,10 @@ func (r *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func calculateAge(resp *http.Response) (d time.Duration, err error) {
+	if resp.Header.Get("Date") == "" {
+		return time.Duration(0), nil
+	}
+
 	stored, err := http.ParseTime(resp.Header.Get("Date"))
 	if err != nil {
 		return d, err
