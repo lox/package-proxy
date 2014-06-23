@@ -14,6 +14,8 @@ func NewApiHandler(delegate http.Handler) http.Handler {
 
 	})
 
+	mux.Handle("/", delegate)
+
 	return &apiHandler{delegate, mux}
 }
 
