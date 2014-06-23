@@ -68,8 +68,7 @@ echo 'Acquire::https::proxy "https://x.x.x.x:3143/";' >> /etc/apt/apt.conf
 The provided `Dockerfile` will build a development environment. The code will be compiled on every run, so you only need to use `--build` once:
 
 ```bash
-./docker.sh --build
-./docker.sh --run 
+./docker.sh --build --dev
 ```
 
 Releasing is a bit complicated as it needs to be built under osx and linux: 
@@ -79,13 +78,9 @@ export GITHUB_TOKEN=xzyxzyxzyxzyxzy
 
 # under osx
 ./release-github.sh v0.6.0 darwin-amd64
-./docker.sh --run
 
-# now under linux
-./release-github.sh v0.6.0 linux-amd64
-exit
-
-# now to build the busybox docker image
-./release-docker.sh v0.6.0 
+# now for linux
+./docker.sh --build-linux
+./release-github.sh v0.6.0 linux-amd64 package-proxy-linux-amd64
 ```
 
