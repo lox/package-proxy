@@ -4,7 +4,7 @@ RUN apt-get -y update --no-install-recommends
 RUN apt-get -y install --no-install-recommends golang-go bzr git ca-certificates
 RUN go get github.com/aktau/github-release
 RUN go get github.com/lox/package-proxy
-ADD release-docker.sh /release-docker.sh
+ADD release-github.sh /release-github.sh
 ADD run.sh /run.sh
 ENV GOBIN /go/bin
 ENV PATH $GOBIN:$PATH

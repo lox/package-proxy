@@ -38,23 +38,25 @@ $GOBIN/package-proxy -tls
 Where possible, Package Proxy is designed to work as an https/http proxy, so under Linux you should be able to configure it with:
 
 ```bash
-export HTTP_PROXY=https://localhost:3142
-export HTTPS_PROXY=https://localhost:3143
+export http_proxy=http://localhost:3142
+export https_proxy=http://localhost:3143
 ```
 
 Because Package Proxy uses generated SSL certificates (effectively a MITM attack), you need to install the certificate that it generates as a trusted root. **Do not do this unless you understand the security implications**.
 
+**Under Ubuntu:**
+
 ```bash
-# NOT IMPLEMENTED YET, copy cert from certs dir
-sudo mkdir /usr/share/ca-certificates/package-proxy
-sudo packageproxy -cert > /usr/share/ca-certificates/package-proxy/package-proxy.crt
-sudo dpkg-reconfigure ca-certificates
+curl -s http://<proxyaddress>:3143/package-proxy.pem > \
+    /usr/local/share/ca-certificates/package-proxy.crt
+
+update-ca-certificates
 ```
 
 
 ### Apt/Ubuntu
 
-Apt will respect `HTTPS_PROXY`, but if you'd rather configure it manually
+Apt will respect `https_proxy`, but if you'd rather configure it manually
 
 ```bash
 echo 'Acquire::http::proxy "https://x.x.x.x:3142/";' >> /etc/apt/apt.conf
@@ -63,15 +65,27 @@ echo 'Acquire::https::proxy "https://x.x.x.x:3143/";' >> /etc/apt/apt.conf
 
 ### Development / Releasing
 
-```bash
-go get github.com/aktau/github-release
+The provided `Dockerfile` will build a development environment. The code will be compiled on every run, so you only need to use `--build` once:
 
-github-release release \
-    --user lox \
-    --repo package-proxy \
-    --tag v0.1.0 \
-    --name "Initial release"
+```bash
+./docker.sh --build
+./docker.sh --run 
 ```
 
+Releasing is a bit complicated as it needs to be built under osx and linux: 
 
+```bash
+export GITHUB_TOKEN=xzyxzyxzyxzyxzy 
+
+# under osx
+./release-github.sh v0.6.0 darwin-amd64
+./docker.sh --run
+
+# now under linux
+./release-github.sh v0.6.0 linux-amd64
+exit
+
+# now to build the busybox docker image
+./release-docker.sh v0.6.0 
+```
 
