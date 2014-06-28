@@ -4,13 +4,12 @@ A caching reverse proxy designed for caching package managers. Generates self-si
 
 **Currently supported:**
   * Apt/Ubuntu
+  * RubyGems
+  * Composer
 
 **Planned**
-  * Composer
-  * RubyGems
   * Npm
   * Docker Registry
-
 
 ## Running
 

@@ -19,7 +19,7 @@ fi
 if [ -n "$run" ] ; then
   docker rm -f package-proxy &>/dev/null || true
   docker run \
-    --tty --interactive --rm \
+    --detach \
     --name package-proxy \
     --publish 3142:3142 \
     --publish 3143:3143 \
