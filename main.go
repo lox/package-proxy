@@ -6,24 +6,23 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
-	"sync"
+	"strings"
 	"time"
 
-	"github.com/lox/package-proxy/api"
 	"github.com/lox/package-proxy/cache"
-	"github.com/lox/package-proxy/crypto"
+	"github.com/lox/package-proxy/mitm"
 	"github.com/lox/package-proxy/server"
 	"github.com/lox/package-proxy/ubuntu"
 )
 
 const (
-	listenHttp  = "0.0.0.0:3142"
-	listenHttps = "0.0.0.0:3143"
-	day         = time.Hour * 24
-	week        = day * 7
-	forever     = day * 1000
-	cacheSize   = 10 << 20 // 10Gb
+	listen    = "0.0.0.0:3142"
+	day       = time.Hour * 24
+	week      = day * 7
+	forever   = day * 1000
+	cacheSize = 10 << 20 // 10Gb
+	caKey     = "certs/packageproxy-ca.key"
+	caCert    = "certs/packageproxy-ca.crt"
 )
 
 var version string
@@ -49,12 +48,23 @@ var cachePatterns = cache.CachePatternSlice{
 	// rubygems
 	cache.NewPattern(`/api/v1/dependencies`, day),
 	cache.NewPattern(`gem\$`, week),
+	// npm
+	cache.NewPattern(`^https?://registry.npmjs.org/(.+)\.tgz$`, week),
+	cache.NewPattern(`^https?://registry.npmjs.org/`, time.Hour),
+}
+
+var mitmHosts = []string{
+	"codeload.github.com:443",
+	"registry.npmjs.org:443",
+	"api.github.com:443",
+	"packagist.org:443",
 }
 
 type flags struct {
-	EnableUbuntuRewriting bool
-	EnableTlsUnwrapping   bool
-	CacheDir              string
+	EnableRewrites      []string
+	EnableTlsUnwrapping bool
+	CacheDir            string
+	ShowVersion         bool
 }
 
 func parseFlags() flags {
@@ -63,43 +73,65 @@ func parseFlags() flags {
 		fmt.Println("\nOptions:")
 		fmt.Printf("  -dir=            The dir to store cache data in\n")
 		fmt.Printf("  -tls=true        Enable tls and dynamic certificate generation\n")
-		fmt.Printf("  -ubuntu=true     Rewrite ubuntu urls to the fastest mirror\n")
+		fmt.Printf("  -rewrite=all     Only rewrite specific services (defaults to all)\n")
+		fmt.Printf("  -version         The compiled version\n")
 	}
 
 	cacheDir := flag.String("dir", "", "The dir to store cache data in")
 	enableTls := flag.Bool("tls", false, "Enable tls and dynamic certificate generation")
-	enableUbuntu := flag.Bool("ubuntu", true, "Rewrite ubuntu urls to the fastest mirror")
+	enableRewrites := flag.String("rewrite", "all", "Only rewrite specific services")
+	showVersion := flag.Bool("version", false, "Show the compiled version")
 	flag.Parse()
 
 	return flags{
-		EnableUbuntuRewriting: *enableUbuntu,
-		EnableTlsUnwrapping:   *enableTls,
-		CacheDir:              *cacheDir,
+		EnableRewrites:      strings.Split(*enableRewrites, ","),
+		EnableTlsUnwrapping: *enableTls,
+		CacheDir:            *cacheDir,
+		ShowVersion:         *showVersion,
 	}
 }
 
 func enableTls(handler http.Handler) (http.Handler, error) {
-	path, err := os.Getwd()
+	log.Printf("using ca cert %s for tls unwrapping", caCert)
+	mitmHandler, err := mitm.InterceptTlsHandler(handler, caKey, caCert)
 	if err != nil {
-		panic(err)
+		return handler, err
 	}
 
-	log.Printf("using certificate %s for dynamic cert generation",
-		filepath.Join(path, "certs/public.pem"))
-
-	// unwraps TLS with generated certificates
-	handler, err = crypto.UnwrapTlsHandler(handler,
-		"certs/private.key", "certs/public.pem")
-
-	if err != nil {
-		return nil, err
+	for _, host := range mitmHosts {
+		mitmHandler.AddHost(host)
 	}
 
-	return handler, nil
+	return mitmHandler, nil
+}
+
+func isRewriterEnabled(service string, enabled []string) bool {
+	for _, e := range enabled {
+		if e == "all" || e == service {
+			return true
+		}
+	}
+
+	return false
+}
+
+func buildRewriters(enabled []string) []server.Rewriter {
+	r := []server.Rewriter{}
+
+	if isRewriterEnabled("ubuntu", enabled) {
+		log.Printf("enabling ubuntu mirror rewriting")
+		r = append(r, ubuntu.NewRewriter())
+	}
+	return r
 }
 
 func main() {
 	flags := parseFlags()
+
+	if flags.ShowVersion {
+		fmt.Printf("package-proxy %s\n", version)
+		os.Exit(0)
+	}
 
 	log.Printf("running package-proxy %s", version)
 
@@ -109,44 +141,27 @@ func main() {
 	}
 
 	config := &server.Config{
-		Cache:    cache,
-		Patterns: cachePatterns,
+		Cache:     cache,
+		Patterns:  cachePatterns,
+		Rewriters: buildRewriters(flags.EnableRewrites),
 	}
 
-	if flags.EnableUbuntuRewriting {
-		log.Printf("enabling ubuntu mirror rewriting")
-		config.Rewriters = append(config.Rewriters, ubuntu.NewRewriter())
-	}
+	var handler http.Handler
 
-	proxy, err := server.NewPackageProxy(config)
+	handler, err = server.NewPackageProxy(config)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	var wg sync.WaitGroup
-	wg.Add(1)
-
-	go func() {
-		log.Printf("http proxy listening on http://%s", listenHttp)
-		log.Fatal(http.ListenAndServe(listenHttp, proxy))
-	}()
-
 	if flags.EnableTlsUnwrapping {
-		wg.Add(1)
-
-		handler, err := enableTls(proxy)
+		handler, err = enableTls(handler)
 		if err != nil {
 			log.Fatal(err)
 		}
-
-		// https port provides an api too
-		api := api.NewApiHandler(handler)
-
-		go func() {
-			log.Printf("https proxy listening on http://%s", listenHttps)
-			log.Fatal(http.ListenAndServe(listenHttps, api))
-		}()
 	}
 
-	wg.Wait()
+	// handler = api.NewApiHandler(handler)
+
+	log.Printf("proxy listening on https://%s", listen)
+	log.Fatal(http.ListenAndServe(listen, handler))
 }

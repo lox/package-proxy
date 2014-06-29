@@ -55,6 +55,7 @@ func NewPackageProxy(config *Config) (*PackageProxy, error) {
 		Director: func(r *http.Request) {
 			// strip conditional request headers
 			r.Header.Del("If-Modified-Since")
+			r.Header.Del("If-Match")
 
 			// these get applied to the upstream request
 			for _, rewrite := range config.Rewriters {

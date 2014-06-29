@@ -1,4 +1,7 @@
 #!/bin/bash
+set -e
+
+cd $(dirname $0)
 
 PACKAGE=github.com/lox/package-proxy
 
@@ -6,6 +9,7 @@ while [[ $1 == -* ]] ; do
   case "$1" in
     --build)        build=1   ;;
     --run)          run=1     ;;
+    --runit)        runit=1   ;;
     --dev)          dev=1     ;;
     --build-linux)  buildlinux=1 ;;
   esac
@@ -13,21 +17,12 @@ while [[ $1 == -* ]] ; do
 done
 
 if [ -n "$build" ] ; then
+  echo "Building development docker container"
   docker build --tag="lox24/package-proxy" .
 fi
 
-if [ -n "$run" ] ; then
-  docker rm -f package-proxy &>/dev/null || true
-  docker run \
-    --detach \
-    --name package-proxy \
-    --publish 3142:3142 \
-    --publish 3143:3143 \
-    --volume /tmp/vagrant-cache/generic/:/tmp/cache \
-    lox24/package-proxy:latest "$@"
-fi
-
 if [ -n "$dev" ] ; then
+  echo "Running development docker container"
   docker rm -f package-proxy &>/dev/null || true
   docker run \
     --tty --interactive --rm \
@@ -38,26 +33,45 @@ if [ -n "$dev" ] ; then
     --volume /projects/go/src/$PACKAGE:/go/src/$PACKAGE \
     --volume /tmp/vagrant-cache/generic/:/tmp/cache \
     --entrypoint "/run.sh" \
-    lox24/package-proxy:latest "$@"
+    lox24/package-proxy "$@"
 fi
 
 if [ -n "$buildlinux" ] ; then
+  trap "rm .cidfile" EXIT
+  test -f package-proxy && rm package-proxy
+
+  echo "Building linux build container"
   docker rm -f package-proxy &>/dev/null || true
-  CID=$(docker run \
-    --detach  \
-    --name package-proxy \
+  docker build --tag="lox24/package-proxy" .
+  docker run \
+    --interactive --tty --rm \
     --publish 3142:3142 \
     --publish 3143:3143 \
     --env GITHUB_TOKEN=$GITHUB_TOKEN \
     --volume /projects/go/src/$PACKAGE:/go/src/$PACKAGE \
     --volume /tmp/vagrant-cache/generic/:/tmp/cache \
     --entrypoint "/run.sh" \
-    lox24/package-proxy true)
+    --cidfile=".cidfile" \
+    lox24/package-proxy true
 
-  # https://github.com/dotcloud/docker/issues/3986
-  docker cp $CID:/go/bin/package-proxy $CID &>/dev/null || true
+  echo "Building release docker container (with linux-amd64 binary)"
+  mv package-proxy release/package-proxy-linux-amd64
+  docker build -t="lox24/package-proxy" ./release
+fi
 
-  mv $CID/package-proxy package-proxy-linux-amd64
-  rm -rf $CID/
-  file package-proxy-linux-amd64
+if [[ -n "$run" || -n "$runit" ]] ; then
+  if [ -n "$runit" ] ; then
+    args="--interactive --tty --rm"
+  else
+    args="--detach"
+  fi
+
+  docker rm -f package-proxy &>/dev/null || true
+  docker run \
+    $args \
+    --name package-proxy \
+    --publish 3142:3142 \
+    --publish 3143:3143 \
+    --volume /tmp/vagrant-cache/generic/:/tmp/cache \
+    lox24/package-proxy "$@"
 fi

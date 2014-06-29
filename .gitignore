@@ -1,4 +1,4 @@
-certs/private.key
-certs/public.pem
+certs/packageproxy-ca.key
+certs/packageproxy-ca.crt
 release/
 package-proxy

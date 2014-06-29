@@ -6,7 +6,7 @@ git_version() {
 }
 
 cd $GOPATH/src/github.com/lox/package-proxy
-
-go install -ldflags "-X main.version $(git_version)" .
+go build -ldflags "-X main.version $(git_version)" .
+./package-proxy -version
 
 exec "$@"

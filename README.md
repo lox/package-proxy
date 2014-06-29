@@ -2,6 +2,8 @@
 
 A caching reverse proxy designed for caching package managers. Generates self-signed certificates on the fly to allow caching of https resources.
 
+[![Gobuild Download](http://beta.gobuild.io/badge/github.com/lox/package-proxy/download.png)](http://beta.gobuild.io/github.com/lox/package-proxy)
+
 **Currently supported:**
   * Apt/Ubuntu
   * RubyGems
