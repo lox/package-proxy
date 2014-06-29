@@ -1,4 +1,5 @@
 certs/packageproxy-ca.key
 certs/packageproxy-ca.crt
-release/
+release/package-proxy-linux-amd64
+release/package-proxy-darwin-amd64
 package-proxy
