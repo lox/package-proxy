@@ -49,6 +49,7 @@ var cachePatterns = cache.CachePatternSlice{
 	cache.NewPattern(`/api/v1/dependencies`, day),
 	cache.NewPattern(`gem\$`, week),
 	// npm
+	cache.NewPattern(`^https?://cnpmjs.org/(.+)\.tgz$`, week),
 	cache.NewPattern(`^https?://registry.npmjs.org/(.+)\.tgz$`, week),
 	cache.NewPattern(`^https?://registry.npmjs.org/`, time.Hour),
 }
@@ -159,8 +160,6 @@ func main() {
 			log.Fatal(err)
 		}
 	}
-
-	// handler = api.NewApiHandler(handler)
 
 	log.Printf("proxy listening on https://%s", listen)
 	log.Fatal(http.ListenAndServe(listen, handler))
