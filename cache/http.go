@@ -5,17 +5,72 @@ import (
 	"bytes"
 	"crypto/md5"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/http/httputil"
+	"strings"
 	"time"
 )
 
 const (
 	MaxAgeHeader       = "X-Package-Proxy-MaxAge"
-	CacheHeader        = "X-Package-Proxy"
+	CacheHeader        = "X-Cache"
+	CacheLookupHeader  = "X-Cache-Lookup"
 	CanonicalUrlHeader = "X-Canonical-Url"
 )
+
+// CachedRoundTripper either uses a cache for serving a response, or the provided upstream
+func CachedRoundTripper(c Cache, upstream http.RoundTripper, serverId string) *roundTripper {
+	return &roundTripper{
+		upstream: upstream,
+		cache:    c,
+		serverId: serverId,
+	}
+}
+
+// roundTripper is a http.RoundTripper that caches responses
+type roundTripper struct {
+	upstream http.RoundTripper
+	cache    Cache
+	serverId string
+}
+
+func (r *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	key := cacheKey(req)
+
+	if isRequestCacheable(req) && r.cache.Has(key) {
+		stream, err := r.cache.Read(key)
+		if err != nil {
+			return nil, err
+		}
+
+		defer stream.Close()
+		resp, err := http.ReadResponse(bufio.NewReader(stream), req)
+		if err != nil {
+			return resp, err
+		}
+
+		return r.cacheHit(resp)
+	}
+
+	upstreamResp, err := r.upstream.RoundTrip(req)
+	if err != nil {
+		return upstreamResp, err
+	}
+
+	if isRequestCacheable(req) && isResponseCacheable(upstreamResp) {
+		respCopy, err := copyResponse(upstreamResp)
+		if err != nil {
+			return nil, err
+		}
+		go r.storeResponse(key, respCopy)
+	} else {
+		return r.cacheSkip(upstreamResp)
+	}
+
+	return r.cacheMiss(upstreamResp)
+}
 
 // http://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html#sec13.5.1
 var ignoredHeaders = []string{
@@ -25,115 +80,91 @@ var ignoredHeaders = []string{
 	"Proxy-Authorization",
 	"TE",
 	"Trailers",
-	"Transfer - Encoding",
+	"Transfer-Encoding",
 	"Upgrade",
+	"X-Cache",
+	"X-Cache-Lookup",
+	"Via",
 }
 
-func CachedRoundTripper(c Cache, upstream http.RoundTripper) *roundTripper {
-	return &roundTripper{upstream: upstream, cache: c}
-}
-
-// roundTripper is a http.RoundTripper that caches responses
-type roundTripper struct {
-	upstream http.RoundTripper
-	cache    Cache
-}
-
-func (r *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-
-	// return immediately if we can't cache
-	if !isRequestCacheable(req) {
-		resp, err := r.upstream.RoundTrip(req)
-		if err != nil {
-			log.Println(err)
-			return resp, err
-		}
-
-		resp.Header.Set(CacheHeader, "SKIP")
-		logRequest(req, resp, "SKIP")
-		return resp, nil
+// storeResponse writes a response to the cache
+func (r *roundTripper) storeResponse(key string, resp *http.Response) error {
+	for _, h := range ignoredHeaders {
+		resp.Header.Del(h)
 	}
 
-	key := cacheKey(req)
-	cacheStatus := "HIT"
+	b, err := httputil.DumpResponse(resp, true)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
 
-	// populate the cache if needed
-	if !r.cache.Has(key) {
-		cacheStatus = "MISS"
-
-		upstreamResp, err := r.upstream.RoundTrip(req)
-		if err != nil {
-			return upstreamResp, err
-		}
-
-		if !isResponseCacheable(upstreamResp) {
-			logRequest(req, upstreamResp, "SKIP")
-			return upstreamResp, nil
-		}
-
-		var maxAge time.Duration
-
-		// TODO: check response max-age
-		if m := req.Header.Get(MaxAgeHeader); m != "" {
-			maxAge, err = time.ParseDuration(m)
-			if err != nil {
-				log.Println(err)
-			}
-		}
-
-		// strip unwanted response headers
-		for _, h := range ignoredHeaders {
-			upstreamResp.Header.Del(h)
-		}
-
-		b, err := httputil.DumpResponse(upstreamResp, true)
-		if err != nil {
-			panic(err)
-		}
-
-		defer upstreamResp.Body.Close()
-		err = r.cache.Write(key, bytes.NewReader(b), maxAge)
-		if err != nil {
-			panic(err)
+	// TODO: check Response Cache-Control headers
+	if header := resp.Request.Header.Get(MaxAgeHeader); header != "" {
+		if maxAge, err := time.ParseDuration(header); err != nil {
+			r.cache.Write(key, bytes.NewReader(b), maxAge)
+		} else {
+			return err
 		}
 	}
 
-	stream, err := r.cache.Read(key)
+	return nil
+}
+
+func (r *roundTripper) setProxyHeaders(resp *http.Response) {
+	via := fmt.Sprintf("%s %s", resp.Proto, r.serverId)
+
+	if v := resp.Header.Get("Via"); v != "" {
+		resp.Header.Set("Via", v+", "+via)
+	} else {
+		resp.Header.Set("Via", via)
+	}
+
+	// squid sends these
+	resp.Header.Del(CacheHeader)
+	resp.Header.Del(CacheLookupHeader)
+}
+
+func copyResponse(resp *http.Response) (*http.Response, error) {
+	resp2 := *resp // shallow copy is ok
+
+	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
 
-	b := bufio.NewReader(stream)
-	defer stream.Close()
+	resp.Body.Close()
+	resp.Body = ioutil.NopCloser(bytes.NewReader(body))
+	resp2.Body = ioutil.NopCloser(bytes.NewReader(body))
 
-	resp, err := http.ReadResponse(b, req)
-	if err != nil {
-		panic(err)
-	}
-
-	if age, err := calculateAge(resp); err != nil {
-		log.Println("unable to parse date header", err)
-	} else {
-		resp.Header.Set("Age", fmt.Sprintf("%.f", age.Seconds()))
-	}
-
-	resp.Header.Set(CacheHeader, fmt.Sprintf("%s", cacheStatus))
-
-	logRequest(req, resp, cacheStatus)
-	return resp, err
+	return &resp2, nil
 }
 
-func calculateAge(resp *http.Response) (d time.Duration, err error) {
-	if resp.Header.Get("Date") == "" {
-		return time.Duration(0), nil
+func (r *roundTripper) cacheHit(resp *http.Response) (*http.Response, error) {
+	// set an Age header
+	if t, err := http.ParseTime(resp.Header.Get("Date")); err == nil {
+		diff := time.Now().Sub(t)
+		resp.Header.Set("Age", fmt.Sprintf("%.f", diff.Seconds()))
 	}
 
-	stored, err := http.ParseTime(resp.Header.Get("Date"))
-	if err != nil {
-		return d, err
-	}
+	r.setProxyHeaders(resp)
+	resp.Header.Set(CacheHeader, "HIT from "+r.serverId)
+	logResponse(resp)
+	return resp, nil
+}
 
-	return time.Now().Sub(stored), nil
+func (r *roundTripper) cacheMiss(resp *http.Response) (*http.Response, error) {
+	r.setProxyHeaders(resp)
+	resp.Header.Set(CacheHeader, "MISS from "+r.serverId)
+	logResponse(resp)
+	return resp, nil
+}
+
+func (r *roundTripper) cacheSkip(resp *http.Response) (*http.Response, error) {
+	r.setProxyHeaders(resp)
+	resp.Header.Set(CacheHeader, "SKIP from "+r.serverId)
+	logResponse(resp)
+	return resp, nil
 }
 
 func isRequestCacheable(req *http.Request) bool {
@@ -141,26 +172,14 @@ func isRequestCacheable(req *http.Request) bool {
 		return false
 	}
 
-	switch req.Method {
-	case "GET":
-		return true
-	case "HEAD":
-		return true
-	}
-
-	return false
+	return req.Method == "GET" || req.Method == "HEAD"
 }
 
 func isResponseCacheable(resp *http.Response) bool {
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return true
-	} else if resp.StatusCode == http.StatusFound {
-		return true
-	} else {
-		return false
-	}
+	return resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusFound
 }
 
+// cacheKey returns an MD5 cache key for a request
 func cacheKey(req *http.Request) string {
 	url := req.URL.String()
 
@@ -172,18 +191,23 @@ func cacheKey(req *http.Request) string {
 	return fmt.Sprintf("%x", md5.Sum([]byte(url)))
 }
 
-func logRequest(req *http.Request, resp *http.Response, status string) {
-	if status == "HIT" {
-		status = "\x1b[32;1m" + status + "\x1b[0m"
-	} else if status == "MISS" {
-		status = "\x1b[31;1m" + status + "\x1b[0m"
+func logResponse(resp *http.Response) {
+	status := resp.Header.Get(CacheHeader)
+
+	if strings.HasPrefix(status, "HIT") {
+		status = "\x1b[32;1mHIT\x1b[0m"
+	} else if strings.HasPrefix(status, "MISS") {
+		status = "\x1b[31;1mMISS\x1b[0m"
+	} else {
+		status = "\x1b[33;1mSKIP\x1b[0m"
 	}
+
 	log.Printf(
 		"%s \"%s %s %s\" (%s) %d %s",
-		req.RemoteAddr,
-		req.Method,
-		req.URL,
-		req.Proto,
+		resp.Request.RemoteAddr,
+		resp.Request.Method,
+		resp.Request.URL,
+		resp.Request.Proto,
 		resp.Status,
 		resp.ContentLength,
 		status,

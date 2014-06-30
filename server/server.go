@@ -35,6 +35,10 @@ func applyConfigDefaults(config *Config) error {
 		config.Patterns = cache.CachePatternSlice{}
 	}
 
+	if config.ServerId == "" {
+		config.ServerId = "package-proxy"
+	}
+
 	if config.Cache == nil {
 		cache, err := cache.NewDiskCache("", 1<<20)
 		if err != nil {
@@ -65,7 +69,9 @@ func NewPackageProxy(config *Config) (*PackageProxy, error) {
 			// reset host header
 			r.Host = r.URL.Host
 		},
-		Transport: cache.CachedRoundTripper(config.Cache, config.Upstream),
+		Transport: cache.CachedRoundTripper(
+			config.Cache, config.Upstream, config.ServerId,
+		),
 	}
 
 	var handler http.Handler

@@ -13,6 +13,7 @@ import (
 	"github.com/lox/package-proxy/mitm"
 	"github.com/lox/package-proxy/server"
 	"github.com/lox/package-proxy/ubuntu"
+	"github.com/nu7hatch/gouuid"
 )
 
 const (
@@ -45,6 +46,8 @@ var cachePatterns = cache.CachePatternSlice{
 	// github
 	cache.NewPattern(`^https://codeload.github.com/(.+)/legacy.zip/(.+)$`, week),
 	cache.NewPattern(`^https://api.github.com/repos/(.+)/zipball`, week),
+	// bitbucket
+	cache.NewPattern(`^https://bitbucket.org/(.+).zip$`, week),
 	// rubygems
 	cache.NewPattern(`/api/v1/dependencies`, day),
 	cache.NewPattern(`gem\$`, week),
@@ -141,10 +144,24 @@ func main() {
 		log.Fatal(err)
 	}
 
+	uid, err := uuid.NewV4()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Printf("server id is %s", uid.String())
+
 	config := &server.Config{
 		Cache:     cache,
 		Patterns:  cachePatterns,
 		Rewriters: buildRewriters(flags.EnableRewrites),
+		ServerId:  uid.String(),
+	}
+
+	if version != "" {
+		config.ServerId += " (package-proxy/" + version + ")"
+	} else {
+		config.ServerId += " (package-proxy)"
 	}
 
 	var handler http.Handler

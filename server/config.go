@@ -11,4 +11,5 @@ type Config struct {
 	Upstream  http.RoundTripper
 	Cache     cache.Cache
 	Patterns  cache.CachePatternSlice
+	ServerId  string
 }
