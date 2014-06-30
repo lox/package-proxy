@@ -1,6 +1,6 @@
 # Package Proxy
 
-A caching reverse proxy designed for caching package managers. Generates self-signed certificates on the fly to allow caching of https resources.
+A caching reverse proxy designed for acting as a proxy for package managers. Optionally supports generating self-signed certificates on the fly to allow caching of https resources. 
 
 [![Gobuild Download](http://beta.gobuild.io/badge/github.com/lox/package-proxy/download.png)](http://beta.gobuild.io/github.com/lox/package-proxy)
 
@@ -8,9 +8,9 @@ A caching reverse proxy designed for caching package managers. Generates self-si
   * Apt/Ubuntu
   * RubyGems
   * Composer
+  * Npm
 
 **Planned**
-  * Npm
   * Docker Registry
 
 ## Running
@@ -18,7 +18,7 @@ A caching reverse proxy designed for caching package managers. Generates self-si
 Via Docker:
 
 ```bash
-docker run --tty --interactive --rm --publish 3142:3142 --publish 3143:3143 lox24/package-proxy:latest
+docker run --tty --interactive --rm --publish 3142:3142 lox24/package-proxy:latest
 ```
 
 As a binary:
@@ -40,7 +40,7 @@ Where possible, Package Proxy is designed to work as an https/http proxy, so und
 
 ```bash
 export http_proxy=http://localhost:3142
-export https_proxy=http://localhost:3143
+export https_proxy=http://localhost:3142
 ```
 
 Because Package Proxy uses generated SSL certificates (effectively a MITM attack), you need to install the certificate that it generates as a trusted root. **Do not do this unless you understand the security implications**.
@@ -48,12 +48,10 @@ Because Package Proxy uses generated SSL certificates (effectively a MITM attack
 **Under Ubuntu:**
 
 ```bash
-curl -s http://<proxyaddress>:3143/package-proxy.pem > \
-    /usr/local/share/ca-certificates/package-proxy.crt
-
+certs/generate-certs.sh
+cp packageproxy-ca.crt /usr/local/share/ca-certificates/package-proxy.crt
 update-ca-certificates
 ```
-
 
 ### Apt/Ubuntu
 
@@ -61,7 +59,7 @@ Apt will respect `https_proxy`, but if you'd rather configure it manually
 
 ```bash
 echo 'Acquire::http::proxy "https://x.x.x.x:3142/";' >> /etc/apt/apt.conf
-echo 'Acquire::https::proxy "https://x.x.x.x:3143/";' >> /etc/apt/apt.conf
+echo 'Acquire::https::proxy "https://x.x.x.x:3142/";' >> /etc/apt/apt.conf
 ```
 
 ### Development / Releasing
@@ -78,10 +76,13 @@ Releasing is a bit complicated as it needs to be built under osx and linux:
 export GITHUB_TOKEN=xzyxzyxzyxzyxzy 
 
 # under osx
-./release-github.sh v0.6.0 darwin-amd64
+release/release-github.sh v0.6.0 darwin-amd64 package-proxy-darwin-amd64
 
 # now for linux
 ./docker.sh --build-linux
-./release-github.sh v0.6.0 linux-amd64 package-proxy-linux-amd64
+release/release-github.sh v0.6.0 linux-amd64 package-proxy-linux-amd64
+
+# now the docker image
+release/release-docker.sh v0.6.0
 ```
 
